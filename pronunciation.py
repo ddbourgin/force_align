@@ -17,6 +17,12 @@ import sys
 import re
 import string
 
+def init_session(url):
+    s = requests.Session()
+    a = requests.adapters.HTTPAdapter(max_retries=20)
+    s.mount(url, a)
+    return s
+
 class Pronounce(object):
     url = "http://www.speech.cs.cmu.edu/cgi-bin/tools/lmtool/run"
     dict_re = re.compile(r"\d+\.dic")
@@ -28,6 +34,8 @@ class Pronounce(object):
             self.words = words
         else:
             self.words = []
+	self.session = init_session(Pronounce.url)
+
 
     def add(self, word):
         self.words.append(word)
@@ -40,13 +48,13 @@ class Pronounce(object):
 
         file = {'corpus': ('words.txt', " ".join(w_nopunc))}
 
-        res = requests.post(Pronounce.url,
+        res = self.session.post(Pronounce.url,
                             data={"formtype": "simple"},
                             files=file, allow_redirects=True)
         base_url = res.url
         text = res.text
         dict_path = Pronounce.dict_re.search(text).group(0)
-        res = requests.get(base_url + dict_path)
+        res = self.session.get(base_url + dict_path)
         
         # generate output dict
         pronunciations = {}
