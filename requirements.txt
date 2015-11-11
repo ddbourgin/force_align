@@ -4,3 +4,4 @@ simplejson
 jsonschema
 click
 tgt
+pandas
