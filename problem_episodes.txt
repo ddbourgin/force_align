@@ -1,0 +1,5 @@
+Episodes for whom forced alignment did not complete successfully:
+TAL Episode 51
+TAL Episode 35
+TAL Episode 62
+TAL Episode 69
