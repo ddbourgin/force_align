@@ -439,9 +439,17 @@ class TAL_scraper(object):
                 f.write(str(catalog)+'\n')
                 f.close()
 
+            modal_phone = \
+            '<div class="modal fade" id="#sentmodal' + str(counter) + '" role="dialog"> <div class="modal-dialog modal-sm"> <div class="modal-content"> <div class="modal-header"> <button type="button" class="close" data-dismiss="modal">&times;</button><h4> </h4></div> <div class="modal-body"> <p>' + txt + '</p> </div> </div> </div>'
+
+            link_phone = ' [<a href="' + self.meta['transcript'] + '">ep. ' + str(self.ep_number) + '</a>, <a href="#" data-toggle="modal" data-target="#sentmodal' + str(counter) + '">sentence</a>]' + modal_phone
+
+            sstring_phones = self.transcript_phonemes[idx] + link_phone
+
             if idx in self.transcript_phonemes.keys():
                 # for phone_catalog, it might be worth including a link to the sstring sentence that the phonemes here correspond to
-                phone_catalog = {"searchstring": self.transcript_phonemes[idx],
+                phone_catalog = {"searchstring": sstring_phones,
+                                 # "searchstring": self.transcript_phonemes[idx],
                                  "filename": unicode(str(counter), 'utf-8'),
                                  "year": unicode(ad, 'utf-8'),
                                  "Event": events,
