@@ -217,6 +217,13 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
                   sentence_phones = sentence_phones + ['{sp}']
                   word_phonemes = grow_phoneme_dict(word_phonemes, w_dict, offset, file_id, ss.transcript[trans_idx, :])
 
+                elif 'alignedWord' in ll.keys() and ll['alignedWord'] == 'sp':
+                  # remove redundant {sp} token if we are inserting a
+                  # pause immediately after it
+                  if sentence_phones[-1] == '{sp}':
+                    sentence_phones.pop()
+                  sentence_phones = sentence_phones + ll['word']
+
               # import ipdb; ipdb.set_trace()
               sentence_phones = ' '.join(sentence_phones)
               ss.transcript_phonemes[idx] = sentence_phones
