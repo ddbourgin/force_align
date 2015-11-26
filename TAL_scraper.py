@@ -444,11 +444,9 @@ class TAL_scraper(object):
 
             link_phone = ' [<a href="' + self.meta['transcript'] + '">ep. ' + str(self.ep_number) + '</a>, <a href="#" data-toggle="modal" data-target="#sentmodal' + str(counter) + '">sentence</a>]' + modal_phone
 
-            sstring_phones = self.transcript_phonemes[idx] + link_phone
-
             if idx in self.transcript_phonemes.keys():
                 # for phone_catalog, it might be worth including a link to the sstring sentence that the phonemes here correspond to
-                phone_catalog = {"searchstring": sstring_phones,
+                phone_catalog = {"searchstring": self.transcript_phonemes[idx] + link_phone,
                                  # "searchstring": self.transcript_phonemes[idx],
                                  "filename": unicode(str(counter), 'utf-8'),
                                  "year": unicode(ad, 'utf-8'),
@@ -633,8 +631,12 @@ class TAL_scraper(object):
             print('    Aligning file %s'%file_name)
             trsfile = './alignment_data/json/'+file_name+'.json'
             outfile = './alignment_data/alignments_json/' + file_name + '_aligned.json'
-            do_alignment(ff, trsfile, outfile, json=True, textgrid=False,
-                 phonemes=True, breaths=False)
+            try:
+            	do_alignment(ff, trsfile, outfile, json=True, textgrid=False,
+                 	     phonemes=True, breaths=False)
+	    except:
+		return True 
+	return False
 
 
     def write_timestamps_csv(self, n_chunks=8):

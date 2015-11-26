@@ -103,8 +103,8 @@ def guess_match(ss, ii, sentence, line_num, trans_idx):
       return True, ss, trans_idx
 
     else:
-      if sentence == '':
-      	return False, ss, None
+      # if sentence == '':
+    	return False, ss, None
 
 
 def hail_mary_guess(trans_idx, ss, mod, sentence, line_num, ii):

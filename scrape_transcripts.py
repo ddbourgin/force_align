@@ -73,6 +73,7 @@ def scrape_transcripts(episode_ids, trans_url, stagger, scraper, bookworm, align
   if type(episode_ids) != list:
     episode_ids = [episode_ids]
 
+  untranscribed_episodes = []
   names = load_name_data()
   tag_eps, tag_links, ep_tags = load_TAL_tags()
   session, genderize = init_sessions()
@@ -97,12 +98,14 @@ def scrape_transcripts(episode_ids, trans_url, stagger, scraper, bookworm, align
       counter = scraper.write_catalog_and_raw(counter)
 
     if align:
-      scraper.align_transcript(n_chunks=8)
+      problem = scraper.align_transcript(n_chunks=8)
+      if problem:
+	untranscribed_episodes.append(scraper.ep_number)
 
   if bookworm:
     scraper.write_field_descriptions()
 
-  return scrapers
+  return scrapers, untranscribed_episodes
 
 
 def transcript_json_dump(scrapers):
@@ -151,7 +154,8 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
 
   for ee in episode_ids:
     transcript = []
-    ss = scrape_transcripts(ee, trans_url, stagger, scraper, False, False)[0]
+    ss, untranscribed_episodes = \
+	scrape_transcripts(ee, trans_url, stagger, scraper, False, False)[0]
     ss.transcript_phonemes = {}
     ss.write_timestamps_csv(n_chunks=8) # for now - this is a hack
     json_dir = './alignment_data/alignments_json/TAL'+str(ee)+'_*.json'
@@ -220,9 +224,9 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
                 elif 'alignedWord' in ll.keys() and ll['alignedWord'] == 'sp':
                   # remove redundant {sp} token if we are inserting a
                   # pause immediately after it
-                  if sentence_phones[-1] == '{sp}':
+                  if len(sentence_phones) !=0 and sentence_phones[-1] == '{sp}':
                     sentence_phones.pop()
-                  sentence_phones = sentence_phones + ll['word']
+                  sentence_phones = sentence_phones + [ll['word']]
 
               # import ipdb; ipdb.set_trace()
               sentence_phones = ' '.join(sentence_phones)
@@ -239,27 +243,29 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
 
 if __name__ == '__main__':
   FILE_ID = 'TAL_Pauses'
-  EPISODE_IDS = range(144,566)
+  EPISODE_IDS = range(164,566)
   STAGGER = 3.1 # stagger requests to reduce server load
   TRANSCRIPT_URL = 'http://www.thisamericanlife.org/radio-archives/episode/####/transcript'
   SCRAPER = TAL_scraper(FILE_ID)
   BOOKWORM = False # True for regular (non-aligned) Bookworm formatting
-  ALIGN = True   # True for performing speech alignment with p2fa-vislab
+  ALIGN = True     # True for performing speech alignment with p2fa-vislab
   ALIGNMENT_BW = False # True for reading the aligned json into bw format
 
   if ALIGNMENT_BW:
-    # problem episodes - TODO: read this from problem_episodes.txt instead of hard coding
+    # problem episodes
+    # TODO: read this from problem_episodes.txt instead of hard coding
     EPISODE_IDS.remove(35)
     EPISODE_IDS.remove(51)
     EPISODE_IDS.remove(62)
     EPISODE_IDS.remove(105)
-#    EPISODE_IDS.remove(144)
+    EPISODE_IDS.remove(161)
+    # pass
 
   if BOOKWORM or ALIGNMENT_BW:
     make_bw_directories(FILE_ID, ALIGNMENT_BW)
 
   if BOOKWORM or ALIGN:
-    scrapers = scrape_transcripts(EPISODE_IDS, TRANSCRIPT_URL, STAGGER, SCRAPER, BOOKWORM, ALIGN)
+    scrapers, untranscribed_episodes = scrape_transcripts(EPISODE_IDS, TRANSCRIPT_URL, STAGGER, SCRAPER, BOOKWORM, ALIGN)
   elif ALIGNMENT_BW:
     word_phonemes = read_aligned_transcripts(EPISODE_IDS, TRANSCRIPT_URL, STAGGER, SCRAPER, False, False)
     SCRAPER.write_field_descriptions(phonemes=True)

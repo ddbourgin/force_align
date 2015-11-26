@@ -156,7 +156,7 @@ def prep_mlf(trsfile, mlffile, word_dictionary, surround, between,
 
         if (len(txt) != len(txt_with_pun)):
             # Try not to use hyphenated words either, if at all possible!
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             raise Exception("Floating punctuation! Remove this from your transcript.")
 
         for w_idx, wrd in enumerate(txt):
