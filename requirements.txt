@@ -4,3 +4,8 @@ simplejson
 jsonschema
 click
 tgt
+numpy
+pydub
+seaborn
+matplotlib
+python-Levenshtein

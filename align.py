@@ -223,6 +223,7 @@ def prep_mlf(trsfile, mlffile, word_dictionary, surround, between,
                             print prn
                     except:
                         # print "###", e
+			wrd2 = wrd2.replace(u'\xc8', 'E')
                         pr = Pronounce(words=[wrd2]).p(add_fake_stress=True)
                         dict_tmp[pr[wrd2][0]] = pr[wrd2][1]
                         print pr

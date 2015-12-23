@@ -3,9 +3,9 @@
 
 Vagrant.configure(2) do |config|
   config.vm.box = "ubuntu/trusty64"
-  
+
   # Create a forwarded port mapping which allows access to a specific port
-  # within the machine from a port on the host machine. 
+  # within the machine from a port on the host machine.
   config.vm.network "forwarded_port", guest: 5000, host: 8000
 
   # Create a public network, which generally matched to bridged network.
@@ -39,7 +39,7 @@ Vagrant.configure(2) do |config|
     v.customize ["modifyvm", :id, "--memory", mem]
     v.customize ["modifyvm", :id, "--cpus", cpus]
   end
- 
+
   config.vm.provision "fix-no-tty", type: "shell" do |s|
      s.privileged = false
      s.inline = "sudo sed -i '/tty/!s/mesg n/tty -s \\&\\& mesg n/' /root/.profile"
@@ -49,12 +49,8 @@ Vagrant.configure(2) do |config|
      sudo apt-get update
      sudo apt-get upgrade -y
      sudo apt-get dist-upgrade -y
-     sudo apt-get install -y gcc git sox build-essential python2.7-dev python-setuptools python-pip libc6-dev-i386
-     sudo pip install inflect numpy requests simplejson jsonschema click functools32 
-     sudo git clone https://github.com/hbuschme/TextGridTools.git
-     cd TextGridTools
-     sudo git reset --hard 8af63b559110e8fb8a2b091682ae9da554dad04d
-     sudo python setup.py install
-     cd ..; sudo rm -rf TextGridTools
+     sudo apt-get install -y gcc git sox build-essential python2.7-dev python-setuptools python-pip libc6-dev-i386 postgresql libpq-dev libav-tools libavcodec-extra-53
+     sudo pip install inflect numpy requests[security] simplejson jsonschema click functools32 tgt ipython psycopg2 pandas dotenv python-Levenshtein pydub
+     sudo pip install git+git://github.com/Miserlou/SoundScrape.git@5dbd42b61fb550d60be3a238024ceaf0fd42d117
    SHELL
 end
