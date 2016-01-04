@@ -146,6 +146,12 @@ def hail_mary_guess(trans_idx, ss, mod, sentence, line_num, ii):
   else:
     if sentence == u'Wow. {0.33}':
       return True, ss, 151
+
+    if sentence == u"Wow. We're driving fast out of here. OK, we're out of here.":
+      return True, ss, 140
+
+    if sentence == u"Come on! {2.01}":
+      return True, ss, 81 # ? not positive about this one.. (Episode 258)
     # still no match :-(
     return False, ss, None
 
@@ -200,6 +206,8 @@ def clean_sentence_n_lines(ss, sentence, line_num, ii):
       .replace('  ', ' ')\
       .replace(' [UNINTELLIGIBLE]', '')\
       .replace('-',' ')\
+      .replace('&quot;', '"')\
+      .replace('andquot;', '"')\
       .replace('&', 'and')\
       .replace('[? ', '')\
       .replace(' ?]', '')\
@@ -218,6 +226,8 @@ def clean_sentence_n_lines(ss, sentence, line_num, ii):
       .replace('  ', ' ')\
       .replace(' [UNINTELLIGIBLE]', '')\
       .replace('-',' ')\
+      .replace('&quot;', '"')\
+      .replace('andquot;', '"')\
       .replace('&', 'and')\
       .replace('[? ', '')\
       .replace(' ?]', '')\

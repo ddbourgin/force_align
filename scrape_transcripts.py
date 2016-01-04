@@ -154,16 +154,23 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
 
   for ee in episode_ids:
     transcript = []
+    json_dir = './alignment_data/alignments_json/TAL'+str(ee)+'_*.json'
+    json_dir = glob.glob(json_dir)
+
+    if len(json_dir) == 0:
+	print('Unable to find algnments for episode {}. Skipping'.format(ee))
+	continue
+
     ss, untranscribed_episodes = \
-	scrape_transcripts(ee, trans_url, stagger, scraper, False, False)[0]
+	scrape_transcripts(ee, trans_url, stagger, scraper, False, False)
+    ss = ss[0]
     ss.transcript_phonemes = {}
     ss.write_timestamps_csv(n_chunks=8) # for now - this is a hack
-    json_dir = './alignment_data/alignments_json/TAL'+str(ee)+'_*.json'
     line_offset = [0]
     mod = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7]
     trans_idx = 0
 
-    for trans in np.sort(glob.glob(json_dir)):
+    for trans in np.sort(json_dir):
       file_id = os.path.split(trans)[-1].split('.')[0]
       chunk_num = int(file_id.split('_')[1].split('seg')[-1])
       print('\nReading %s...'%file_id)
@@ -243,22 +250,22 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
 
 if __name__ == '__main__':
   FILE_ID = 'TAL_Pauses'
-  EPISODE_IDS = range(164,566)
+  EPISODE_IDS = range(259, 265)
   STAGGER = 3.1 # stagger requests to reduce server load
   TRANSCRIPT_URL = 'http://www.thisamericanlife.org/radio-archives/episode/####/transcript'
   SCRAPER = TAL_scraper(FILE_ID)
   BOOKWORM = False # True for regular (non-aligned) Bookworm formatting
-  ALIGN = True     # True for performing speech alignment with p2fa-vislab
-  ALIGNMENT_BW = False # True for reading the aligned json into bw format
+  ALIGN = False     # True for performing speech alignment with p2fa-vislab
+  ALIGNMENT_BW = True # True for reading the aligned json into bw format
 
-  if ALIGNMENT_BW:
-    # problem episodes
-    # TODO: read this from problem_episodes.txt instead of hard coding
-    EPISODE_IDS.remove(35)
-    EPISODE_IDS.remove(51)
-    EPISODE_IDS.remove(62)
-    EPISODE_IDS.remove(105)
-    EPISODE_IDS.remove(161)
+  # if ALIGNMENT_BW:
+  #   # problem episodes
+  #   # TODO: read this from problem_episodes.txt instead of hard coding
+  #   EPISODE_IDS.remove(35)
+  #   EPISODE_IDS.remove(51)
+  #   EPISODE_IDS.remove(62)
+  #   EPISODE_IDS.remove(105)
+  #   EPISODE_IDS.remove(161)
     # pass
 
   if BOOKWORM or ALIGNMENT_BW:
