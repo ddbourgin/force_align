@@ -1,193 +1,30 @@
 #!/usr/bin/python
 
-from audiosearch import Client
 from pydub import AudioSegment
-import pandas as pd
 import numpy as np
 import subprocess
-import psycopg2
-import dotenv
-import re
 import os
-import csv
 import cgi
 import json
 import glob
 import click
-import pickle
 import shutil
-import datetime
 import requests
 import Levenshtein
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 import align
+from utils import make_bw_directories, load_timesteps, get_timestep_chunks, \
+                  create_timesteps_csv, make_alignments_directory, \
+                  init_as_client, db_connect, get_transcript, \
+                  get_episode_info, load_item_key, append_timestamps_csv, \
+                  clean_text, rename_file, clean_sentence, find_episodes, \
+                  find_episode_transcript_ids, collect_episode_metadata
 
-def make_bw_directories(file_name):
-    if not os.path.lexists('./metadata'):
-        os.mkdir('./metadata')
-    if not os.path.lexists('./texts'):
-        os.mkdir('./texts')
-    if not os.path.lexists('./{}'.format(file_name)):
-        os.mkdir('./'+file_name)
-    if not os.path.lexists('./{}_phonemes'.format(file_name)):
-        os.mkdir('./{}_phonemes'.format(file_name))
-    if not os.path.lexists('./{}_phonemes/metadata'.format(file_name)):
-        os.mkdir('./'+file_name+'_phonemes/metadata')
-    if not os.path.lexists('./{}_phonemes/texts'.format(file_name)):
-        os.mkdir('./'+file_name+'_phonemes/texts')
-
-
-def load_timesteps(file_name):
-    ts = np.genfromtxt("./alignment_data/timesteps_{}.csv".format(file_name),
-                       delimiter=b",", dtype=None)
-    return np.array([list(i) for i in ts])
-
-
-def get_timestep_chunks(ep_num, ts_csv):
-    row = np.argwhere(ts_csv[:, 0] == str(int(ep_num))).ravel()[0]
-    chunks = [ii.split(' :: ') for ii in ts_csv[row, 1:]]
-    chunks = [tuple([float(ii), float(jj)]) for [ii,jj] in chunks]
-    return chunks
-
-
-def create_timesteps_csv(n_segs, file_name):
-  with open('../timesteps_{}.csv'.format(file_name), 'wt') as fp:
-    writer = csv.writer(fp, delimiter=b",", quoting=csv.QUOTE_MINIMAL)
-    header = ['Seg_'+ str(i) for i in range(1, n_segs + 1)]
-    writer.writerow( ['Ep_Number'] + header )
-
-
-def make_alignments_directory():
-    if not os.path.lexists('./alignment_data'):
-        os.mkdir('./alignment_data')
-    if not os.path.lexists('./alignment_data/alignments_json'):
-        os.mkdir('./alignment_data/alignments_json')
-    if not os.path.lexists('./alignment_data/seg_json'):
-        os.mkdir('./alignment_data/seg_json')
-    if not os.path.lexists('./alignment_data/seg_audio'):
-        os.mkdir('./alignment_data/seg_audio')
-    if not os.path.lexists('./alignment_data/full_audio'):
-        os.mkdir('./alignment_data/full_audio')
-    if not os.path.lexists('./alignment_data/pronunciations'):
-        os.mkdir('./alignment_data/pronunciations')
-    if not os.path.lexists('./alignment_data/supercuts'):
-        os.mkdir('./alignment_data/supercuts')
-
-
-def init_as_client():
-    vv = dotenv.get_variables('.env')
-    key = str(vv[u'AS_ID'])
-    secret = str(vv[u'AS_SECRET'])
-    return Client(key, secret)
-
-
-def db_connect():
-    vv = dotenv.get_variables('.env')
-    dbname = str(vv[u'dbname'])
-    user = str(vv[u'db_user'])
-    pwd = str(vv[u'db_pwd'])
-    host = str(vv[u'db_host'])
-    conn_string = "host='%s' dbname='%s' " \
-                  "user='%s' password='%s'"%(host, dbname, user, pwd)
-    return psycopg2.connect(conn_string)
-
-
-def get_transcript(db, trans_id):
-    query = """SELECT "timed_texts".*
-               FROM "timed_texts"
-               WHERE "timed_texts"."transcript_id" IN (%s)
-               ORDER BY start_time ASC"""%str(trans_id)
-    return pd.read_sql_query(query, con=db)
-
-
-def get_episode_info(db, ep_id):
-    query = """SELECT "items".*
-               FROM "items"
-               WHERE "items"."id" IN (%s)"""%str(ep_id)
-    return pd.read_sql_query(query, con=db)
-
-
-def collect_episode_metadata(db, ep_id, as_client):
-    # first try getting things from as db, otherwise query the API
-    meta = {}
-    try:
-        ep_data = get_episode_info(db, ep_id)
-        meta['title'] = ep_data.title[0].replace('\xc3\x89', 'E')
-        meta['tags'] = ep_data.tags[0]
-        meta['link'] = ep_data.digital_location[0]
-        meta['airdate'] = ep_data.date_broadcast[0]
-
-    except IndexError:
-        episode = as_client.get_episode(ep_id)
-        meta['title'] = episode["title"].replace('\xc3\x89', 'E')
-        meta['tags'] = episode["tags"]
-        meta['link'] = episode["digital_location"]
-        meta['airdate'] = None
-
-    if not meta['airdate']:
-        meta['airdate'] = 'Unknown'
-
-    if type(meta['airdate']) is datetime.date:
-        meta['airdate'] = meta['airdate'].strftime("%Y-%m-%d")
-
-    return meta
-
-
-def load_item_key():
-    with open("./data/itemid_transcriptid.csv", "rb") as ff:
-        return np.loadtxt(ff, delimiter=b",")
-
-
-def append_timestamps_csv(csv_line, file_name):
-    with open('../timesteps_{}.csv'.format(file_name), 'ab') as fp:
-        writer = csv.writer(fp, delimiter=b",", quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(csv_line)
-
-
-def clean_text(text):
-    return unicode(text, 'utf-8').strip().replace('\n', '').replace('\t', '')
-
-
-def rename_file(audio_url, ep_id):
-    files = os.listdir('.')
-    files.sort(key=os.path.getmtime)
-    os.rename(files[-1], '{}.mp3'.format(ep_id))
-
-
-def find_episodes(show_name, as_client):
-    as_show_id = None
-    res = as_client.search({ 'q': show_name }, 'shows')
-
-    # find the corresponding audiosearch show id for show_name
-    for show in res["results"]:
-        if show["title"].lower() == show_name.lower():
-            as_show_id = show["id"]
-            break
-
-    if not as_show_id:
-        IndexError('Unable to find show `{}` in AS database'.format(show_name))
-
-    # given the audiosearch show id, find the AS episode numbers
-    else:
-        show_info = as_client.get_show(as_show_id)
-        as_ep_ids = show_info["episode_ids"]
-        return as_ep_ids, as_show_id
-
-
-def find_episode_transcript_ids(as_ep_ids):
-    trans_dict = {}
-    epid_transid_key = load_item_key()
-
-    for ep_num in as_ep_ids:
-        try:
-            trans_idx = np.argwhere(epid_transid_key[:,0] == ep_num).ravel()[0]
-            trans_dict[ep_num] = epid_transid_key[trans_idx, 1]
-        except IndexError:
-            print('Unable to find transcript ' \
-                  'for AS episode {}'.format(ep_num))
-    return trans_dict
+from analysis import compare_pronunciations, plot_pronunciations, \
+                     compile_prnc_dict, grow_prnc_dict, \
+                     find_num_pronunciations, pause_dict_word, \
+                     compile_pause_dict, sort_by_pause_length, \
+                     plot_pause_words, compile_supercut
 
 
 def compile_audio_and_transcripts(trans_dict, n_segs, as_client, file_name):
@@ -262,11 +99,20 @@ def prepare_for_alignment(transcript, ep_id, as_client, n_segs, file_name):
     audio_url = episode["digital_location"]
 
     os.chdir('./alignment_data/full_audio/')
+    if os.path.lexists('./{}.mp3'.format(ep_id)):
+        print("Episode file {}.mp3 already exists! Skipping".format(ep_id))
+        os.chdir('../../')
+        return
 
     # first try downloading the audio from soundcloud
     # (suppress stderr to avoid cluttering the console if link is rotted)
     with open(os.devnull, 'w') as devnull:
-        res = subprocess.call(["soundscrape", audio_url], stderr=devnull)
+        try:
+            res = subprocess.call(["soundscrape", audio_url], stderr=devnull)
+        except:
+            print('Error decoding {}.mp3. Skipping'.format(ep_id))
+            os.chdir('../../')
+            return
 
     if res == 0:
         rename_file(audio_url, ep_id)
@@ -300,8 +146,6 @@ def write_transcript_segments(transcript, seg_row_ids, ep_id):
     """
     Write transcript segments to individual json files for use with p2fa.
     """
-    event_regex = r'\[.*\]'
-
     for ii in range(len(seg_row_ids) - 1):
         start_row = seg_row_ids[ii]
         end_row = seg_row_ids[ii + 1]
@@ -314,23 +158,7 @@ def write_transcript_segments(transcript, seg_row_ids, ep_id):
 
         for line in trans:
             speaker = str(line[3]).upper()
-            utter = re.sub(event_regex, "", line[2])
-            utter = utter.replace(' :', ':')\
-                         .replace('].', ']')\
-                         .replace('--', '')\
-                         .replace('  ', ' ')\
-                         .replace(' [UNINTELLIGIBLE]', '')\
-                         .replace('-',' ')\
-                         .replace('&', 'and')\
-                         .replace('[? ', '')\
-                         .replace(' ?]', '')\
-                         .replace(' !', '!')\
-                         .replace(' ?', '?')\
-                         .replace(' ,', ',')\
-                         .replace(' .', '.')\
-                         .replace('#', '')\
-                         .replace('^', '')\
-                         .replace('*', '')
+            utter = clean_sentence(line[2])
             catalog = {'speaker': speaker, 'line': utter}
             tscrpit.append(catalog)
 
@@ -472,32 +300,6 @@ def write_bw_catalog(transcript, phoneme_transcript, counter, ep_num, meta,
     return counter
 
 
-def clean_sentence(sentence):
-    event_regex = r'\[.*\]'
-    cleaned_sentence = re.sub(r'{.*?}', '', sentence)\
-      .replace(' :', ':')\
-      .replace('].', ']')\
-      .replace('--', '')\
-      .replace('  ', ' ')\
-      .replace(' [UNINTELLIGIBLE]', '')\
-      .replace('-',' ')\
-      .replace('&', 'and')\
-      .replace('[? ', '')\
-      .replace(' ?]', '')\
-      .replace(' ]',']')\
-      .replace('#!MLF!#', '')\
-      .replace('", ', '"')\
-      .replace('"! ', '"')
-
-    cleaned_sentence = re.sub(event_regex, "", cleaned_sentence)
-    cleaned_sentence = cleaned_sentence\
-                            .replace('  ', ' ')\
-                            .replace('?] ', '')\
-                            .strip()
-    return cleaned_sentence
-
-
-
 def find_line_in_transcript(transcript, sentence):
     """
     Uses the Levenshtein (i.e., edit) distance between a sentence and the
@@ -618,8 +420,6 @@ def write_field_descriptions(file_name):
         f.close()
 
 
-
-
 def compile_alignments_bookworm(as_ep_ids, file_name):
     """
     Reads the phoneme alignments for each episode, matches them to
@@ -699,399 +499,10 @@ def align_show(show_name, n_segs, file_name):
     as_ep_ids, problem_episodes = align_transcripts(as_ep_ids)
     compile_alignments_bookworm(as_ep_ids, file_name)
 
+    prnc_dict = compile_prnc_dict(as_ep_ids, pdict_fp)
+    pause_dict = compile_pause_dict(file_name, prnc_dict)
 
-
-def compare_pronunciations(word, show_name, file_name):
-    word = word.lower()
-    as_client = init_as_client()
-    as_ep_ids, as_show_id = find_episodes(show_name, as_client)
-
-    pdict_fp = './alignment_data/pronunciations/' \
-               '{}_prnc_dict.pickle'.format(file_name)
-
-    if os.path.lexists(pdict_fp):
-        with open(pdict_fp, 'rb') as handle:
-            prnc_dict = pickle.load(handle)
-    else:
-        prnc_dict = compile_prnc_dict(as_ep_ids, pdict_fp)
-
-    plot_pronunciations(prnc_dict, word, show_name, file_name)
-    return prnc_dict
-
-
-
-def plot_pronunciations(prnc_dict, word, show_name, file_name):
-    sns.set(style="white")
-    fig, ax = plt.subplots()
-
-    counts, labels = [], []
-    prncs = prnc_dict[word].keys()
-    title = 'Pronunciations for `{}` in {}'.format(word, show_name)
-
-    for prnc in prncs:
-        counts.append(prnc_dict[word][prnc]["count"])
-        labels.append(prnc + '\n(Count: {})'.format(counts[-1]))
-
-    idxs = np.argsort(labels) # for consistency across plots
-    freqs = np.asarray(counts, dtype=float) / np.sum(counts)
-    ax = sns.barplot(labels[idxs], freqs[idxs], palette="Set3", ax=ax)
-    save_path = './alignment_data/pronunciations/' \
-                '{}_pronunc_{}.png'.format(word, file_name)
-
-    ax.set_ylabel("Frequency")
-    ax.set_title(title)
-    plt.savefig(save_path)
-    plt.close()
-
-
-
-def compile_prnc_dict(as_ep_ids, pdict_fp):
-    """
-    Construct a pronunciation dictionary for all words in the corpus and
-    cache it in ./pronuncations for future queries.
-    """
-    prnc_dict = {}
-    for ep_num in as_ep_ids:
-        phoneme_file = \
-            './alignment_data/alignments_json/{}_seg*.json'.format(ep_num)
-
-        if len(glob.glob(phoneme_file)) == 0:
-            print('No alignments found for episode ' \
-                  '{}. Skipping.'.format(ep_num))
-            continue
-
-        for ff in glob.glob(phoneme_file):
-            fname = os.path.split(ff)[-1].replace('_aligned.json', '')
-
-            with open(ff) as df:
-                algn = json.load(df)["words"]
-
-                for val in algn:
-                    word = val["alignedWord"].lower()
-                    if word == 'sp':
-                        continue
-                    prnc_dict = grow_prnc_dict(val, word, prnc_dict, fname)
-
-    with open(pdict_fp, 'wb') as handle:
-        pickle.dump(prnc_dict, handle)
-
-    return prnc_dict
-
-
-def grow_prnc_dict(val, word, prnc_dict, seg_name):
-    pronunc = ' '.join([vv[0] for vv in val["phonemes"]])
-
-    # if this is the first time we've seen the word
-    if word not in prnc_dict.keys():
-        prnc_dict[word] = {}
-        prnc_dict[word][pronunc] = \
-            {"count": 1,
-             "locations": [(val["line_idx"], seg_name)],
-             "speaker":   [val["speaker"]],
-             "timesteps": [(val["start"], val["end"])]}
-
-    # otherwise, if we've seen the word before
-    else:
-        prev_pronunc = prnc_dict[word].keys()
-
-        # if we have already seen this pronunciation, increment the count
-        if pronunc in prev_pronunc:
-            prnc_dict[word][pronunc]["count"] += 1
-            prnc_dict[word][pronunc]["speaker"]\
-                                .append(val["speaker"])
-            prnc_dict[word][pronunc]["locations"]\
-                                .append((val["line_idx"], seg_name))
-            prnc_dict[word][pronunc]["timesteps"]\
-                                .append((val["start"], val["end"]))
-
-        # otherwise, make a new entry
-        else:
-            prnc_dict[word][pronunc] = \
-                    {"count": 1,
-                     "locations": [(val["line_idx"], seg_name)],
-                     "speaker":   [val["speaker"]],
-                     "timesteps": [(val["start"], val["end"])]}
-    return prnc_dict
-
-
-def find_num_pronunciations(prnc_dict):
-    """
-    Sorts the words in prnc_dict by the number of different
-    pronunciations that exist for each. Returns a sorted 2d array
-    where each row contains [word, n_pronunciations].
-    """
-    n_prncs = np.array(
-       [[wrd, len(prnc_dict[wrd].keys())] for wrd in prnc_dict.keys()])
-    idxs = n_prncs[:, 1].argsort()[::-1]
-    return n_prncs[idxs]
-
-
-
-
-def pause_dict_word(file_name, word, prnc_dict=None):
-    """
-    For testing. We can delete this once we're sure compile_pause_dict is
-    working correctly
-    """
-    if not prnc_dict:
-        pdict_fp = './alignment_data/pronunciations/' \
-                   '{}_prnc_dict.pickle'.format(file_name)
-
-        if os.path.lexists(pdict_fp):
-            with open(pdict_fp, 'rb') as handle:
-                prnc_dict = pickle.load(handle)
-        else:
-            raise OSError('Path {} does not exist!'.format(pdict_fp))
-
-    pause_dict = {}
-    prev_file = None
-    path = './{}_bookworm/{}_phonemes/' \
-           'texts/input.txt'.format(file_name, file_name)
-
-    with open(path, 'r') as ff:
-        for prnc in prnc_dict[word].keys():
-            regex_after = r'(\{(sp|\d{1}\.\d{2})\} ' + prnc + r' \{(\d{1}\.\d{2})\})'
-            regex_before = r'(\{(\d{1}\.\d{2})\} ' + prnc + r' \{(sp|\d{1}\.\d{2})\})'
-
-            for line in ff.readlines():
-                res_after  = re.findall(regex_after, line, re.IGNORECASE)
-                res_before = re.findall(regex_before, line, re.IGNORECASE)
-
-                if res_after or res_before:
-                    print(line)
-                    print(res_after)
-                    print(res_before)
-                    print('\n')
-
-
-
-
-
-
-
-
-def compile_pause_dict(file_name, prnc_dict=None):
-    """
-    Requires bookworm files in the current directory.
-    """
-    if not prnc_dict:
-        pdict_fp = './alignment_data/pronunciations/' \
-                   '{}_prnc_dict.pickle'.format(file_name)
-
-        if os.path.lexists(pdict_fp):
-            with open(pdict_fp, 'rb') as handle:
-                prnc_dict = pickle.load(handle)
-        else:
-            raise OSError('Path {} does not exist!'.format(pdict_fp))
-
-    pause_dict = {}
-    prev_file = None
-    path = './{}_bookworm/{}_phonemes/' \
-           'texts/input.txt'.format(file_name, file_name)
-
-    with open(path, 'r') as ff:
-        words = np.sort(prnc_dict.keys())
-        n_words = len(words)
-        w_len = max([len(w) for w in words]) + 6 + len(str(n_words)) * 2
-        f = 'Reading pauses for {:<%d}{:^%d}'%(w_len, w_len)
-
-        for idx, wrd in enumerate(words):
-            pause_dict[wrd] = {}
-            count_total_after, count_total_before = 0., 0.
-            pause_total_after, pause_total_before = 0., 0.
-            print(f.format('`{}`'.format(wrd),
-                           '({} / {})'.format(idx + 1, n_words)))
-
-            for prnc in prnc_dict[wrd].keys():
-                pause_dict[wrd][prnc] = {}
-                count_after, count_before = 0., 0.
-                pause_after, pause_before = 0., 0.
-                regex_after = r'(\{(sp|\d{1}\.\d{2})\} ' + prnc + r' \{(\d{1}\.\d{2})\})'
-                regex_before = r'(\{(\d{1}\.\d{2})\} ' + prnc + r' \{(sp|\d{1}\.\d{2})\})'
-
-                # regex_after = r'\b' + prnc + r' \{\d{1}\.\d{2}\}'
-                # regex_before = r'\{\d{1}\.\d{2}\} ' + prnc + r'\b'
-
-                for line in ff.readlines():
-                    res_after  = re.findall(regex_after, line, re.IGNORECASE)
-                    res_before = re.findall(regex_before, line, re.IGNORECASE)
-
-                    for ss1 in res_after:
-                        count_after += 1
-                        pause_after += float(ss1[2])
-                        # pause_after += float(ss1.upper().replace(prnc + ' {', '').replace('}', ''))
-
-                    for ss2 in res_before:
-                        count_before += 1
-                        pause_before += float(ss2[1])
-                        # pause_before += float(ss2.upper().replace('} ' + prnc, '').replace('{', ''))
-
-                ff.seek(0)
-
-                if count_after:
-                    pause_dict[wrd][prnc]['avg_after']  = \
-                                        pause_after / count_after
-                else:
-                    pause_dict[wrd][prnc]['avg_after'] = 0.
-
-                if count_before:
-                    pause_dict[wrd][prnc]['avg_before'] = \
-                                        pause_before / count_before
-                else:
-                    pause_dict[wrd][prnc]['avg_before'] = 0.
-
-                pause_dict[wrd][prnc]['count_after']  = int(count_after)
-                pause_dict[wrd][prnc]['count_before'] = int(count_before)
-
-                count_total_after  += count_after
-                count_total_before += count_before
-
-                pause_total_after += pause_after
-                pause_total_before += pause_before
-
-            if count_total_after:
-                pause_dict[wrd]['avg_after'] = \
-                    pause_total_after / count_total_after
-            else:
-                pause_dict[wrd]['avg_after'] = 0.
-
-            if count_total_before:
-                pause_dict[wrd]['avg_before'] = \
-                    pause_total_before / count_total_before
-            else:
-                pause_dict[wrd]['avg_before'] = 0.
-
-            pause_dict[wrd]['count_after']   = int(count_total_after)
-            pause_dict[wrd]['count_before']  = int(count_total_before)
-
-    pause_dict_fp = './alignment_data/{}_pause_dict.pickle'.format(file_name)
-    with open(pause_dict_fp, 'wb') as handle:
-        pickle.dump(pause_dict, handle)
-
-    return pause_dict
-
-
-def sort_by_pause_length(file_name, pause_dict=None):
-    if not pause_dict:
-        pdict_fp = './alignment_data/{}_pause_dict.pickle'.format(file_name)
-
-        if os.path.lexists(pdict_fp):
-            with open(pdict_fp, 'rb') as handle:
-                pause_dict = pickle.load(handle)
-        else:
-            raise OSError('Path {} does not exist!'.format(pdict_fp))
-
-    pause_before, pause_after = [], []
-    for wrd in pause_dict.keys():
-        wrd_dict = pause_dict[wrd]
-
-        entry_before = (wrd, wrd_dict['avg_before'], wrd_dict['count_before'])
-        entry_after  = (wrd, wrd_dict['avg_after'],  wrd_dict['count_after'])
-
-        pause_before.append(entry_before)
-        pause_after.append(entry_after)
-
-    pause_before = np.asarray(pause_before)
-    pause_after  = np.asarray(pause_after)
-
-    idx_before = np.argsort(pause_before[:, 1])[::-1]
-    idx_after  = np.argsort(pause_after[:, 1])[::-1]
-
-    idx_count_before = np.argsort(pause_before[:, 2])[::-1]
-    idx_count_after = np.argsort(pause_after[:, 2])[::-1]
-
-    return pause_before[idx_before], pause_after[idx_after], pause_before[idx_count_before], pause_after[idx_count_after]
-
-
-def plot_pause_words(show_name, file_name):
-    """
-    Plots the words with the largest Avg. Pause Length After / Word Count ratios
-    """
-    sns.set(style="white")
-
-    _,_,c,d = sort_by_pause_length(file_name) # we only need one list
-    rr_after = np.array([(w, float(j) * float(i), i, j) for w, i, j in d if float(i) != 0.])
-    rr_before = np.array([(w, float(j) * float(i), i, j) for w, i, j in c if float(i) != 0.])
-
-    idxs_after = np.argsort(rr_after[:, 1].astype(float))[::-1]
-    idxs_before = np.argsort(rr_before[:, 1].astype(float))[::-1]
-
-    ratio_a = rr_after[idxs_after]
-    ratio_b = rr_before[idxs_before]
-
-    labels_a, labels_b = [], []
-    for ii in range(10):
-        ll = '\nC: {0}\nP: {1:.5}'.format(ratio_a[ii, 3], ratio_a[ii, 2])
-        labels_a.append(ratio_a[ii,0] + ll)
-        ll = '\nC: {0}\nP: {1:.5}'.format(ratio_b[ii, 3], ratio_b[ii, 2])
-        labels_b.append(ratio_b[ii,0] + ll)
-
-
-    yax_a = ratio_a[:10, 1].astype(float)
-    yax_b = ratio_b[:10, 1].astype(float)
-
-    title_a = 'Words with Top Word Count * Avg. Succeeding Pause Length\nProducts in {}'.format(show_name)
-    title_b = 'Words with Top Word Count * Avg. Preceding Pause Length\nProducts in {}'.format(show_name)
-
-    idxs_a = np.argsort(yax_a)[::-1] # for consistency across plots
-    idxs_b = np.argsort(yax_b)[::-1] # for consistency across plots
-
-    fig, ax = plt.subplots()
-    ax = sns.barplot(np.array(labels_a)[idxs_a], yax_a[idxs_a],
-                     palette="Set3", ax=ax)
-    ax.set_ylabel("Word Count * Avg. Pause Length")
-    ax.set_title(title_a)
-    save_path = './alignment_data/{}_pause_after.png'.format(file_name)
-    plt.savefig(save_path)
-    plt.close()
-
-    fig, ax = plt.subplots()
-    ax = sns.barplot(np.array(labels_b)[idxs_b], yax_b[idxs_b],
-                     palette="Set3", ax=ax)
-    ax.set_ylabel("Word Count * Avg. Pause Length")
-    ax.set_title(title_b)
-    save_path = './alignment_data/{}_pause_before.png'.format(file_name)
-    plt.savefig(save_path)
-    plt.close()
-
-
-
-def compile_supercut(prnc_dict, word, file_name, show_name):
-    pad_length = 500. # in milliseconds
-    prev_file = None
-    word_dict = prnc_dict[word]
-    silence = AudioSegment.silent(duration=1000)
-
-    for prnc in word_dict.keys():
-        supercut = AudioSegment.empty()
-        locations = np.asarray(word_dict[prnc]['locations'])
-        timesteps = np.asarray(word_dict[prnc]['timesteps']) * 1000.
-
-        for ((line, file_id), (start, stop)) in zip(locations[:30], timesteps[:30]):
-            if prev_file == file_id:
-                pass
-
-            else:
-                path = './alignment_data/seg_audio/{}.wav'.format(file_id)
-                audio = AudioSegment.from_file(path, format='wav', channels=1,
-                                               sample_width=2)
-                seg_len = (audio.frame_count() / audio.frame_rate) * 1000.
-                prev_file = file_id
-
-            if start < pad_length:
-                start = pad_length
-
-            if stop + pad_length > seg_len:
-                stop = seg_len - pad_length
-
-            supercut += silence + audio[start - pad_length:stop + pad_length]
-
-
-        supercut_fp = "./alignment_data/supercuts/{}_{}_{}.wav"\
-                                            .format(word, prnc, file_name)
-        tag_dict = {"word": word, "pronunciation": prnc, "show": show_name}
-        supercut.export(supercut_fp, format="wav", tags=tag_dict)
-
+    plot_pause_words(show_name, file_name, pause_dict)
 
 # if __name__ == '__main__':
     # show_name = "Political Gabfest"
