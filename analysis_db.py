@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 import sqlite3
 
 def sort_by_pause_length(file_name):
@@ -91,9 +92,9 @@ def plot_prnc_counts(show_name, file_name, word):
     conn = sqlite3.connect('./alignment_data/{}.db'.format(file_name))
     cur = conn.cursor()
 
-    cur.execute("SELECT prnc, count_before, count_after FROM pronunciations WHERE word_index IN (SELECT word_index FROM words WHERE word=?)", (word,))
+    cur.execute("SELECT prnc, count FROM pronunciations WHERE word_index IN (SELECT word_index FROM words WHERE word=?)", (word,))
     val = cur.fetchall()
-    counts = [np.sum([i,q]) for i,q in [(v[1], v[2]) for v in val]]
+    counts = [v[1] for v in val]
     prncs = [v[0] for v in val]
 
     title = 'Counts for Pronunciations of \n`{}` in {}'.format(word, show_name)
@@ -103,6 +104,62 @@ def plot_prnc_counts(show_name, file_name, word):
     ax.set_title(title)
     ax.set_ylabel("Count")
     save_path = './alignment_data/{}_{}_prnc_count.png'.format(word, file_name)
+    plt.savefig(save_path)
+    plt.close()
+
+
+def speaker_pronuncs(show_name, file_name, speaker, word):
+    sns.set(style="white")
+    word = word.lower().strip()
+    speaker = speaker.upper().strip()
+
+    conn = sqlite3.connect('./alignment_data/{}.db'.format(file_name))
+    cur = conn.cursor()
+
+    # get pronunciation indices (which we use to compute counts) for speaker
+    cur.execute("SELECT prnc_index FROM locations WHERE speaker=? AND word_index IN (SELECT word_index FROM words WHERE word=?)", (speaker, word))
+    val = np.array(cur.fetchall()).ravel()
+    prnc_indexes = np.nonzero(np.bincount(val))[0]
+    sort_idxs = np.sort(prnc_indexes)
+    counts_speak = np.bincount(val)[sort_idxs].astype(float)
+    propors_speak = (counts_speak / np.sum(counts_speak)) * 100.
+
+    # get prncs for each prnc_index
+    sql_list = "(" + ', '.join('?' * len(sort_idxs)) + ")"
+    sql = "SELECT prnc FROM pronunciations WHERE prnc_index IN " + sql_list + " ORDER BY prnc_index"
+    cur.execute(sql, tuple(prnc_indexes))
+    prncs_speak = np.array(cur.fetchall()).ravel()
+
+    # get all available pronunciations for the word
+    cur.execute("SELECT prnc, count, prnc_index FROM pronunciations WHERE word_index IN (SELECT word_index FROM words WHERE word=?)", (word,))
+    val = cur.fetchall()
+    counts_all = np.array([v[1] for v in val]).astype(float)
+    propors_all = (np.array(counts_all) / np.sum(counts_all)) * 100.
+    prncs_all = [v[0] for v in val]
+    prnc_index = [v[2] for v in val]
+
+    # match speaker pronunciation proportions with overall pronunciation props
+    counts, prncs, speaks = [], [], []
+    for idx, ix in enumerate(prnc_index):
+        speaks += ['{}'.format(speaker.title()), 'Overall']
+        prncs += [prncs_all[idx], prncs_all[idx]]
+        if ix in sort_idxs:
+            bb = np.argwhere(sort_idxs == ix).ravel()
+            counts += [propors_speak[bb][0], propors_all[idx]]
+        else:
+            counts += [0, propors_all[idx]]
+
+    title = 'Usage Frequencies for Pronunciations of \n`{}` in {}'\
+                                                    .format(word, show_name)
+    cc = pd.DataFrame(np.array([prncs, counts, speaks]).T, columns=['prnc', 'count', 'Speaker'])
+    cc['count'] = cc['count'].astype(float)
+
+    fig, ax = plt.subplots()
+    ax = sns.barplot(x='prnc', y='count', hue='Speaker', data=cc,
+                     palette="Set3", ax=ax)
+    ax.set_title(title)
+    ax.set_ylabel("Usage Proportion")
+    save_path = './alignment_data/{}_{}_{}_prnc_count.png'.format(word, file_name, speaker.title())
     plt.savefig(save_path)
     plt.close()
 
