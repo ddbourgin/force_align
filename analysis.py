@@ -68,14 +68,14 @@ def create_analysis_db(file_name):
     return cur, conn
 
 
-def compile_prnc_dict(as_ep_ids, file_name):
+def compile_prnc_db(as_ep_ids, file_name):
     """
     Construct a pronunciation dictionary for all words in the corpus.
     """
-    prnc_dict = {}
     cur, conn = create_analysis_db(file_name)
 
     for ep_num in as_ep_ids:
+        prnc_dict = {}
         phoneme_file = \
             './alignment_data/alignments_json/{}_seg*.json'\
                                             .format('TAL' + str(ep_num))
@@ -99,36 +99,23 @@ def compile_prnc_dict(as_ep_ids, file_name):
                         continue
                     prnc_dict = grow_prnc_dict(val, word, prnc_dict, fname)
 
-    grow_prnc_db(prnc_dict, cur, conn)
+        grow_prnc_db(prnc_dict, cur, conn)
     return prnc_dict
 
 
 def grow_prnc_db(prnc_dict, cur, conn):
     for word in prnc_dict.keys():
     	word1 = word.lower().strip()
-    	vals = cur.execute("SELECT word_index, word FROM words WHERE word=?", (word1, )).fetchone()
-
-    	if vals:
-    	    word_index, word1 = vals
-
-    	else:
-    	    cur.execute("INSERT INTO words (word) VALUES (?)", (word1, ))
-    	    word_index = cur.lastrowid
-    	    conn.commit()
+    	cur.execute("INSERT INTO words (word) VALUES (?)", (word1, ))
+    	word_index = cur.lastrowid
+    	conn.commit()
 
     	for prnc in prnc_dict[word].keys():
-    	    vals = cur.execute("SELECT prnc_index, prnc, count FROM pronunciations WHERE word_index=? AND prnc=?", (word_index, prnc)).fetchone()
     	    count = prnc_dict[word1][prnc]['count']
 
-    	    if vals:
-        		prnc_index, prnc, prev_count = vals
-          		cur.execute("UPDATE pronunciations SET count=(?) WHERE prnc_index=?", (prev_count + count, prnc_index))
-        		conn.commit()
-
-    	    else:
-        		cur.execute("INSERT INTO pronunciations (word_index, prnc, count) VALUES (?, ?, ?)", (word_index, prnc, count))
-        		prnc_index = cur.lastrowid
-        		conn.commit()
+  	    cur.execute("INSERT INTO pronunciations (word_index, prnc, count) VALUES (?, ?, ?)", (word_index, prnc, count))
+  	    prnc_index = cur.lastrowid
+	    conn.commit()
 
             data = zip(prnc_dict[word][prnc]['locations'], prnc_dict[word][prnc]['timesteps'], prnc_dict[word][prnc]['speaker'])
     	    data =[(word_index, prnc_index) + i[0] + i[1] + (i[2], ) for i in data]
@@ -238,9 +225,9 @@ def compile_pause_db(file_name):
     words = [i[0] for i in vals]
     ids  = [i[1] for i in vals]
 
+    word_idxs = np.array(ids)[np.argsort(words)]
     words = np.sort(words)
     n_words = len(words)
-    word_idxs = np.array(ids)[np.argsort(words)]
     w_len = max([len(w) for w in words]) + 6 + len(str(n_words)) * 2
 
     with open(path, 'r') as ff:
@@ -329,8 +316,6 @@ def grow_pause_db(conn, cur, pause_dict, wrd, wrd_idx):
 
     query = "SELECT prnc_index, prnc FROM pronunciations WHERE word_index=?"
     vals = cur.execute(query, (wrd_idx, )).fetchall()
-    # prnc_indexs = [i[0] for i in vals]
-    # prncs_db = [i[1] for i in vals]
 
     data = []
     for idx, pr in vals:
@@ -341,21 +326,14 @@ def grow_pause_db(conn, cur, pause_dict, wrd, wrd_idx):
 
 
 def sort_by_pause_length(file_name, pause_dict=None):
-    if not pause_dict:
-        pdict_fp = './alignment_data/{}_pause_dict.pickle'.format(file_name)
-
-        if os.path.lexists(pdict_fp):
-            with open(pdict_fp, 'rb') as handle:
-                pause_dict = pickle.load(handle)
-        else:
-            raise OSError('Path {} does not exist!'.format(pdict_fp))
-
     pause_before, pause_after = [], []
-    for wrd in pause_dict.keys():
+    vals = cur.execute("SELECT word, word_index, count_before, count_after, avg_pause_before, avg_pause_after FROM words").fetchall()
+
+    for val in vals: 
         wrd_dict = pause_dict[wrd]
 
-        entry_before = (wrd, wrd_dict['avg_before'], wrd_dict['count_before'])
-        entry_after  = (wrd, wrd_dict['avg_after'],  wrd_dict['count_after'])
+        entry_before = (val[0], val[4], val[2])
+        entry_after  = (val[0], val[5], val[3])
 
         pause_before.append(entry_before)
         pause_after.append(entry_after)
