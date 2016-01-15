@@ -12,12 +12,15 @@ import shutil
 import requests
 import Levenshtein
 
+from db_utils import Postgres_Connect
+
 import align
+
 from utils import make_bw_directories, load_timesteps, get_timestep_chunks, \
                   create_timesteps_csv, make_alignments_directory, \
-                  init_as_client, db_connect, get_transcript, \
-                  get_episode_info, load_item_key, append_timestamps_csv, \
-                  clean_text, rename_file, clean_sentence, find_episodes, \
+                  init_as_client, get_transcript, get_episode_info, \
+                  load_item_key, append_timestamps_csv, clean_text, \
+                  rename_file, clean_sentence, find_episodes, \
                   find_episode_transcript_ids, collect_episode_metadata
 
 from analysis import compare_pronunciations, plot_pronunciations, \
@@ -28,7 +31,8 @@ from analysis import compare_pronunciations, plot_pronunciations, \
 
 
 def compile_audio_and_transcripts(trans_dict, n_segs, as_client, file_name):
-    db = db_connect()
+    db = Postgres_Connect().connection()
+    # db = db_connect()
 
     for (ep_id, trans_id) in trans_dict.items():
         transcript = compile_episode_transcript(trans_id, db)
@@ -428,7 +432,8 @@ def compile_alignments_bookworm(as_ep_ids, file_name):
     files for both a phoneme bookworm and a regular bookworm.
     """
     counter = 0
-    db = db_connect()
+    # db = db_connect()
+    db = Postgres_Connect().connection()
     as_client = init_as_client()
     make_bw_directories(file_name)
     ts_csv = load_timesteps(file_name)

@@ -2,47 +2,11 @@ import os
 import numpy as np
 import csv
 import dotenv
-import psycopg2
 import pandas as pd
-import re
-from audiosearch import Client
 import datetime
-import MySQLdb
+import re
 
-class DB_Connection(object):
-    def __init__(self, database):
-        self.dbname = database
-        host, user, paswd, ssh_user, ssh_key = self.get_env()
-        self.ssh_tunnel(ssh_user, host, ssh_key)
-        self.db = MySQLdb.connect(host='127.0.0.1', user=user, port=9990,
-                                  passwd=paswd, db=database)
-        self.cursor = self.db.cursor()
-
-    def get_env(self):
-        import dotenv
-        dotenv.load_dotenv('.env')
-        host = os.environ.get("host")
-        user = os.environ.get("user")
-        paswd = os.environ.get("pwd")
-        ssh_user = os.environ.get("ssh_user")
-        ssh_key = os.environ.get("ssh_key")
-        return host, user, paswd, ssh_user, ssh_key
-
-    def ssh_tunnel(self, ssh_user, host, ssh_key):
-        """
-        Don't forget to close this tunnel when you're finished
-        grabbing stuff from the server!
-        """
-        import subprocess
-        cmd = ['ssh', '{}@{}'.format(ssh_user, host), '-i',
-               '{}'.format(ssh_key), '-f','-N', '-L', '9990:localhost:3306']
-        subprocess.check_call(cmd)
-
-    def kill_tunnel():
-        call = subprocess.check_call(['killall', 'ssh'])
-
-
-
+from audiosearch import Client
 
 def make_bw_directories(file_name):
     if not os.path.lexists('./metadata'):
@@ -103,15 +67,18 @@ def init_as_client():
     return Client(key, secret)
 
 
-def db_connect():
-    vv = dotenv.get_variables('.env')
-    dbname = str(vv[u'dbname'])
-    user = str(vv[u'db_user'])
-    pwd = str(vv[u'db_pwd'])
-    host = str(vv[u'db_host'])
-    conn_string = "host='%s' dbname='%s' " \
-                  "user='%s' password='%s'"%(host, dbname, user, pwd)
-    return psycopg2.connect(conn_string)
+# def db_connect():
+#     """
+#     For connecting to a POSTGRES database on the local machine.
+#     """
+#     vv = dotenv.get_variables('.env')
+#     dbname = str(vv[u'dbname'])
+#     user = str(vv[u'db_user'])
+#     pwd = str(vv[u'db_pwd'])
+#     host = str(vv[u'db_host'])
+#     conn_string = "host='%s' dbname='%s' " \
+#                   "user='%s' password='%s'"%(host, dbname, user, pwd)
+#     return psycopg2.connect(conn_string)
 
 
 def get_transcript(db, trans_id):
@@ -215,7 +182,7 @@ def find_episode_transcript_ids(as_ep_ids):
 
 
 def collect_episode_metadata(db, ep_id, as_client):
-    # first try getting things from as db, otherwise query the API
+    # first try getting things from AS db, otherwise query the API
     meta = {}
     try:
         ep_data = get_episode_info(db, ep_id)

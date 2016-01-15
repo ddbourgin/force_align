@@ -1,5 +1,5 @@
 
-from utils import init_as_client, find_episodes, DB_Connection
+from utils import init_as_client, find_episodes
 import os
 import pickle
 import seaborn as sns
