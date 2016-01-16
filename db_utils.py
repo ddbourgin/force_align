@@ -13,11 +13,14 @@ class SQL_Connect(object):
         self.dbname = dbname
         self.host   = '127.0.0.1'
 
-        try: # first, try connecting locally
+        # first, try connecting locally
+        try:
             config = '/etc/mysql/my.cnf'
             self.connection = MySQLdb.connect(host=self.host, db=dbname,
                                               read_default_file=config)
-        except: # otherwise open an ssh_tunnel using details from .env
+
+        # otherwise open an ssh_tunnel using details from .env
+        except:
             remote, user, paswd, ssh_user, ssh_key, dbname = self.load_env()
             self.ssh_tunnel(ssh_user, remote, ssh_key)
             self.connection = MySQLdb.connect(host=self.host, user=user,
@@ -55,9 +58,23 @@ class SQL_Connect(object):
                '{}'.format(ssh_key), '-f','-N', '-L', '9990:localhost:3306']
         subprocess.check_call(cmd)
 
-    def kill_tunnel():
+    def kill_tunnel(self):
         call = subprocess.check_call(['killall', 'ssh'])
 
+    def fetch_dict(self):
+        """
+        Helper function to get a dict of (column :: values)
+        pairs from a MySQLdb.cursor query
+        """
+        data = self.cursor.fetchone()
+        if data is None:
+            return None
+        desc = self.cursor.description
+        arr = {}
+
+        for idx, name in enumerate(desc):
+            arr[name] = [dd[idx] for dd in data]
+        return arr
 
 
 class Postgres_Connect(object):
@@ -82,6 +99,7 @@ class Postgres_Connect(object):
 
         # otherwise open an ssh tunnel using details from .env
         except:
+            self.host   = '127.0.0.1'
             conn_string = "host='{}' dbname='{}' user='{}' "\
                           "password='{}' port='9990'"\
                           .format(self.host, dbname, user, paswd)
@@ -122,5 +140,5 @@ class Postgres_Connect(object):
                '{}'.format(ssh_key), '-f','-N', '-L', '9990:localhost:5432']
         subprocess.check_call(cmd)
 
-    def kill_tunnel():
+    def kill_tunnel(self):
         call = subprocess.check_call(['killall', 'ssh'])

@@ -140,10 +140,9 @@ def clean_sentence(sentence):
       .replace('^', '')\
       .replace('*', '')
     cleaned_sentence = re.sub(event_regex, "", cleaned_sentence)
-    cleaned_sentence = cleaned_sentence\
-                            .replace('  ', ' ')\
-                            .replace('?] ', '')\
-                            .strip()
+    cleaned_sentence = cleaned_sentence .replace('  ', ' ')\
+                                        .replace('?] ', '')\
+                                        .strip()
     return cleaned_sentence
 
 
