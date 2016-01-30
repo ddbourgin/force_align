@@ -1,3 +1,5 @@
+import subprocess
+
 class SQL_Connect(object):
     """
     Class for common interactions with a MySQL database. If connecting
@@ -10,6 +12,7 @@ class SQL_Connect(object):
     """
     def __init__(self):
         import MySQLdb
+        remote, user, paswd, ssh_user, ssh_key, dbname = self.load_env()
         self.dbname = dbname
         self.host   = '127.0.0.1'
 
@@ -21,7 +24,6 @@ class SQL_Connect(object):
 
         # otherwise open an ssh_tunnel using details from .env
         except:
-            remote, user, paswd, ssh_user, ssh_key, dbname = self.load_env()
             self.ssh_tunnel(ssh_user, remote, ssh_key)
             self.connection = MySQLdb.connect(host=self.host, user=user,
                                               port=9990, passwd=paswd,
@@ -30,11 +32,11 @@ class SQL_Connect(object):
 
     def load_env(self):
         """
-        Find .env file in the directory holding this file
+        Find .env file in the directory holding this script
         """
         import dotenv, os
         path = os.path.realpath(__file__)
-        env  = os.path.join(path, '.env')
+        env  = os.path.join(os.path.dirname(path), '.env')
         dotenv.load_dotenv(env)
 
         dbname = os.environ.get("DB_NAME")
@@ -53,7 +55,6 @@ class SQL_Connect(object):
         Don't forget to close this tunnel when you're finished
         grabbing stuff from the server!
         """
-        import subprocess
         cmd = ['ssh', '{}@{}'.format(ssh_user, remote), '-i',
                '{}'.format(ssh_key), '-f','-N', '-L', '9990:localhost:3306']
         subprocess.check_call(cmd)
@@ -66,7 +67,7 @@ class SQL_Connect(object):
         Helper function to get a dict of (column :: values)
         pairs from a MySQLdb.cursor query
         """
-        data = self.cursor.fetchone()
+        data = self.cursor.fetchall()
         if data is None:
             return None
         desc = self.cursor.description
@@ -92,30 +93,35 @@ class Postgres_Connect(object):
 
         # try connecting on localhost first
         try:
-            conn_string = "host='{}' dbname='{}' user='{}' "\
+            conn_string = "host='127.0.0.1' dbname='{}' user='{}' "\
                           "password='{}'"\
-                          .format(self.host, dbname, user, paswd)
+                          .format(dbname, user, paswd)
             self.connection = psycopg2.connect(conn_string)
 
         # otherwise open an ssh tunnel using details from .env
         except:
-            self.host   = '127.0.0.1'
-            conn_string = "host='{}' dbname='{}' user='{}' "\
-                          "password='{}' port='9990'"\
-                          .format(self.host, dbname, user, paswd)
-            self.ssh_tunnel(ssh_user, remote, ssh_key)
-            self.connection = psycopg2.connect(conn_string)
+            try:
+                print('Unable to connect on localhost, trying an ssh tunnel')
+                conn_string = "host='{}' dbname='{}' user='{}' "\
+                              "password='{}' port='9990'"\
+                              .format(self.host, dbname, user, paswd)
+                self.ssh_tunnel(ssh_user, remote, ssh_key)
+                self.connection = psycopg2.connect(conn_string)
+
+            except:
+                print('Unable to connect via ssh tunnel, killing tunnel')
+                self.kill_tunnel()
 
         self.cursor = self.connection.cursor()
 
 
     def load_env(self):
         """
-        Find .env file in the directory holding this file
+        Find .env file in the directory holding this script
         """
         import dotenv, os
         path = os.path.realpath(__file__)
-        env  = os.path.join(path, '.env')
+        env  = os.path.join(os.path.dirname(path), '.env')
         dotenv.load_dotenv(env)
 
         dbname = os.environ.get("DB_NAME")
@@ -135,7 +141,6 @@ class Postgres_Connect(object):
         Don't forget to close this tunnel when you're finished
         grabbing stuff from the server!
         """
-        import subprocess
         cmd = ['ssh', '{}@{}'.format(ssh_user, remote), '-i',
                '{}'.format(ssh_key), '-f','-N', '-L', '9990:localhost:5432']
         subprocess.check_call(cmd)
