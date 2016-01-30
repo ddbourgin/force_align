@@ -753,4 +753,3 @@ if __name__ == '__main__':
     n_segs = 10
     file_name = 'gabfest'
     align_show(show_name, n_segs, file_name)
-    align_show()

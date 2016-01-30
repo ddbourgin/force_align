@@ -4,7 +4,7 @@ Fork of [p2fa-vislab](https://github.com/ucbvislab/p2fa-vislab), itself a fork o
 
 ## Notes
 The two relevant branches of this project are `master` and `server.` The `master` branch contains files for pulling transcripts from the [Audiosearch](https://www.audiosear.ch/) API and database, while the `server` branch has files for scraping transcripts from the This American Life [radio archive](http://www.thisamericanlife.org/radio-archives).
-- Unfortunately, in order to use the files in `master`, you'll need access to a local version of the Audiosearch database dump. Because this is proprietary and requires a NDA, I can't include it here :-(
+- Unfortunately, in order actually run the code in `master`, you'll need access to a local version of the Audiosearch database dump. Because this is proprietary, I can't include it here :-(
 - The files in the `server` branch are much more disorganized. I'm working to clean them up, but for now, it's probably worth just skimming to see if they make sense.
 
 ## Transcription and Alignment
