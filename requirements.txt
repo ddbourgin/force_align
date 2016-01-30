@@ -3,9 +3,12 @@ requests
 simplejson
 jsonschema
 click
+pandas
 tgt
 numpy
 pydub
 seaborn
 matplotlib
+psycopg2
+MySQL-python
 python-Levenshtein
