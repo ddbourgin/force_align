@@ -7,7 +7,6 @@ import os
 import cgi
 import json
 import glob
-import click
 import shutil
 import requests
 import Levenshtein
