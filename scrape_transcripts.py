@@ -250,13 +250,13 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
 
 if __name__ == '__main__':
   FILE_ID = 'TAL_Pauses'
-  EPISODE_IDS = range(259, 265)
+  EPISODE_IDS = range(263, 500)
   STAGGER = 3.1 # stagger requests to reduce server load
   TRANSCRIPT_URL = 'http://www.thisamericanlife.org/radio-archives/episode/####/transcript'
   SCRAPER = TAL_scraper(FILE_ID)
   BOOKWORM = False # True for regular (non-aligned) Bookworm formatting
-  ALIGN = False     # True for performing speech alignment with p2fa-vislab
-  ALIGNMENT_BW = True # True for reading the aligned json into bw format
+  ALIGN = True     # True for performing speech alignment with p2fa-vislab
+  ALIGNMENT_BW = False # True for reading the aligned json into bw format
 
   # if ALIGNMENT_BW:
   #   # problem episodes
