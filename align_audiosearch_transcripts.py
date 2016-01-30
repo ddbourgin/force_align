@@ -31,7 +31,30 @@ from analysis import compare_pronunciations, plot_pronunciations, \
 
 
 def compile_audio_and_transcripts(trans_dict, n_segs, as_client, file_name):
-    db = Postgres_Connect().connection()
+    """
+    Connects to the audiosearch Postgres database and searches for all episode
+    transcripts associated with a particular transcript id.
+
+    Parameters
+    ----------
+    trans_dict : dict
+        A dictionary as produced via find_episode_transcript_ids where keys are
+        audiosearch episode ids and values are the corresponding audiosearch
+        transcript ids
+
+    n_segs : int
+        The number of chunks to split a transcript into during alignment
+        with p2fa (more chunks ~> faster alignment)
+
+    as_client : Audiosearch API connection
+        The Audiosearch API client
+
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
+    """
+
+    db = Postgres_Connect().connection
     # db = db_connect()
 
     for (ep_id, trans_id) in trans_dict.items():
@@ -41,10 +64,39 @@ def compile_audio_and_transcripts(trans_dict, n_segs, as_client, file_name):
             print('Unable to find transcript ID {}'
                   ' in AS database'.format(trans_id))
             continue
-        prepare_for_alignment(transcript, ep_id, as_client, n_segs, file_name)
+        dl_audio_and_segment(transcript, ep_id, as_client, n_segs, file_name)
 
 
-def segment_audio_and_transcript(transcript, ep_id, n_segs, file_name):
+def make_segments(transcript, ep_id, n_segs, file_name):
+    """
+    Identifies the appropriate points to segment an episode transcript
+    and (corresponding audio file) into based off of n_segs, and writes these
+    segment points to timesteps.csv
+
+    Parameters
+    ----------
+    transcript : np.array of shape (n, 4)
+        An array containing the transcript for the podcast episode associated
+        with trans_id. Each row corresponds to a line in the transcript, and
+        the columns correspond to [start_time, end_time, utterance, speaker_id]
+
+    ep_id : int
+        The audiosearch episode id associated with the transcript
+
+    n_segs : int
+        The number of chunks to split a transcript into during alignment
+        with p2fa (more chunks ~> faster alignment)
+
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
+
+    Returns
+    -------
+    time_idxs : list
+        A list of row indices in transcript corresponding to the location at
+        which we should start and end each transcript segment
+    """
     if not os.path.exists('../timesteps_{}.csv'.format(file_name)):
         create_timesteps_csv(n_segs, file_name)
 
@@ -93,11 +145,32 @@ def segment_audio_and_transcript(transcript, ep_id, n_segs, file_name):
     return time_idxs
 
 
-def prepare_for_alignment(transcript, ep_id, as_client, n_segs, file_name):
+def dl_audio_and_segment(transcript, ep_id, as_client, n_segs, file_name):
     """
     Downloads the audio for an episode and segments it into bite-sized chunks.
     Writes the transcript for each audio segment to an individual json file
     stored in ./alignment_data/seg_json/
+
+    Parameters
+    ----------
+    transcript : np.array of shape (n, 4)
+        An array containing the transcript for the podcast episode associated
+        with trans_id. Each row corresponds to a line in the transcript, and
+        the columns correspond to [start_time, end_time, utterance, speaker_id]
+
+    as_client : Audiosearch API connection
+        The Audiosearch API client
+
+    n_segs : int
+        The number of chunks to split a transcript into during alignment
+        with p2fa (more chunks ~> faster alignment)
+
+    ep_id : int
+        The audiosearch episode id associated with the transcript
+
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
     """
     episode = as_client.get_episode(ep_id)
     audio_url = episode["digital_location"]
@@ -137,8 +210,8 @@ def prepare_for_alignment(transcript, ep_id, as_client, n_segs, file_name):
             import ipdb; ipdb.set_trace()
             return
 
-    # segment audio & transcript
-    seg_row_ids = segment_audio_and_transcript(transcript, ep_id, n_segs, file_name)
+    # identify segment audio & transcript slice points
+    seg_row_ids = make_segments(transcript, ep_id, n_segs, file_name)
 
     # write the segmented transcript to individual json files
     write_transcript_segments(transcript, seg_row_ids, ep_id)
@@ -148,7 +221,21 @@ def prepare_for_alignment(transcript, ep_id, as_client, n_segs, file_name):
 
 def write_transcript_segments(transcript, seg_row_ids, ep_id):
     """
-    Write transcript segments to individual json files for use with p2fa.
+    Write transcript segments to separate json files for use with p2fa.
+
+    Parameters
+    ----------
+    transcript : np.array of shape (n, 4)
+        An array containing the transcript for the podcast episode associated
+        with trans_id. Each row corresponds to a line in the transcript, and
+        the columns correspond to [start_time, end_time, utterance, speaker_id]
+
+    seg_row_ids : list
+        A list of row indices in transcript corresponding to the location at
+        which we should start and end each transcript segment
+
+    ep_id : int
+        The audiosearch episode id associated with the transcript
     """
     for ii in range(len(seg_row_ids) - 1):
         start_row = seg_row_ids[ii]
@@ -172,6 +259,26 @@ def write_transcript_segments(transcript, seg_row_ids, ep_id):
 
 
 def compile_episode_transcript(trans_id, db):
+    """
+    Uses the Audiosearch database to compiles a transcript for the podcast
+    episode associated with trans_id.
+
+    Parameters
+    ----------
+    trans_id : int
+        The Audiosearch transcript ID for a particular podcast episode as
+        found using find_episode_transcript_ids
+
+    db : database connection
+        The connection to the Audiosearch Postgres database
+
+    Returns
+    -------
+    transcript : np.array of shape (n, 4)
+        An array containing the transcript for the podcast episode associated
+        with trans_id. Each row corresponds to a line in the transcript, and
+        the columns correspond to [start_time, end_time, utterance, speaker_id]
+    """
     transcript = []
     trans = get_transcript(db, trans_id).sort_values(by="start_time")
 
@@ -185,6 +292,7 @@ def compile_episode_transcript(trans_id, db):
         if speaker is None or np.isnan(speaker):
           speaker = -1
 
+        # this happens a lot in the audiosearch db..
         if text == '.':
           continue
 
@@ -204,6 +312,20 @@ def align_transcripts(as_ep_ids):
     Align the transcript segments in ./alignment_data/seg_json/ to episode
     audio using p2fa. If there are any errors during alignment, skip the
     episode on which they occur and move on.
+
+    Parameters
+    ----------
+    as_ep_ids : list
+        The list of all audiosearch episode ids associated with a particular
+        podcast
+
+    Returns
+    -------
+    as_ep_ids : list
+        A list of episode ids that have been completely aligned.
+
+    problem_episodes : list
+        A list of episode ids that were not fully aligned
     """
     problem_episodes = []
 
@@ -222,24 +344,61 @@ def align_transcripts(as_ep_ids):
                 print('\t{} already exists! Skipping'.format(fn))
                 continue
 
-            # try:
-            print('\n\tAligning {}...'.format(file_name))
-            align.do_alignment(ff, trsfile, outfile, json=True,
+            try:
+                print('\n\tAligning {}...'.format(file_name))
+                align.do_alignment(ff, trsfile, outfile, json=True,
                                    textgrid=False, phonemes=True,
                                    breaths=False)
-            # except:
-            #     print('\n\tError Aligning {}'.format(file_name))
-            #     problem_episodes.append(ep_num)
-            #     as_ep_ids.remove(ep_num)
-            #     break
+            except:
+                print('\n\tError Aligning {}'.format(file_name))
+                problem_episodes.append(ep_num)
+                as_ep_ids.remove(ep_num)
+                continue
 
     return as_ep_ids, problem_episodes
 
 
 def write_bw_catalog(transcript, phoneme_transcript, counter, ep_num, meta,
                      file_name):
+    """
+    Writes the input.txt and jsoncatalog.txt files for transcript and phonemic-
+    transcript bookworms.
+
+    Parameters
+    ----------
+    transcript : np.array of shape (n, 4)
+        A podcast transcript as produced via compile_episode_transcript. Each
+        row corresponds to a line in the transcript, and the columns
+        correspond to [start_time, end_time, utterance, speaker_id]
+
+    phoneme_transcript : list of n lists
+        A phonemic version of transcript as produced via
+        compile_phoneme_transcript. Each sublist contains [phoneme
+        transcription, original transcript line, transcript line index]
+
+    counter : int
+        A counter that is used to ensure each line in the bookworms has a
+        unique id AND corresponds to the matching line in the other bookworm
+
+    ep_num : int
+        The podcast episode number associated with the transcript
+
+    meta : dict
+        A dictionary of additional metadata for the episode. Contains, amongst
+        other things, the topics, tags, and links associated with the episode
+        in the Audiosearch database
+
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
+
+    Returns
+    -------
+    counter : int
+        The counter variable, incremented by the number of lines in transcript
+    """
     for idx,line in enumerate(transcript):
-        if str(idx) in phoneme_transcript[:,2]:
+        if str(idx) in phoneme_transcript[:, 2]:
             counter += 1
             ts = int(float(line[0])) # recast minutes to int for bookworm
             row = np.argwhere(phoneme_transcript[:,2] == str(idx)).ravel()[0]
@@ -251,12 +410,12 @@ def write_bw_catalog(transcript, phoneme_transcript, counter, ep_num, meta,
 
             catalog = \
                 {"searchstring": sstring,
-                 "filename": unicode(str(counter), 'utf-8'),
+                 "filename": str(counter),
                  "year": meta['airdate'],
                  "Topics": meta['tags'],
                  "transcript": meta['link'],
                  "ep_number": int(ep_num),
-                 "Speaker_ID": unicode(str(line[3]), 'utf-8'),
+                 "Speaker_ID": str(line[3]),
                  "minutes": ts}
 
             catalog = json.dumps(catalog)
@@ -273,21 +432,24 @@ def write_bw_catalog(transcript, phoneme_transcript, counter, ep_num, meta,
                 ff.write(str(catalog)+'\n')
                 ff.close()
 
-            # fix this
+            # TODO: fix this! The goal is to have it so that we can navigate
+            # smoothly between a transcript line and its phonemic transcription
+            # within the Bookworm browser, using, e.g., a popup accessible
+            # from the query results in the podcast. Unfortunately, this isn't
+            # working right now.
             modal_phone = \
             '<div class="modal fade" id="#sentmodal' + str(counter) + '" role="dialog"> <div class="modal-dialog modal-sm"> <div class="modal-content"> <div class="modal-header"> <button type="button" class="close" data-dismiss="modal">&times;</button><h4> </h4></div> <div class="modal-body"> <p>' + txt + '</p> </div> </div> </div>'
 
             link_phone = ' [<a href="' + meta['link'] + '">'+ meta['title'].title() +'</a>, <a href="#" data-toggle="modal" data-target="#sentmodal' + str(counter) + '">sentence</a>]' + modal_phone
 
-            # TODO: for phone_catalog, i need to include a link to the sstring sentence that the phonemes here correspond to
             phone_catalog = \
                 {"searchstring": phoneme_transcript[row, 0] + link_phone,
-                 "filename": unicode(str(counter), 'utf-8'),
+                 "filename": str(counter),
                  "year": meta['airdate'],
                  "Topics": meta['tags'],
                  "transcript": meta['link'],
                  "ep_number": int(ep_num),
-                 "Speaker_ID": unicode(str(line[3]), 'utf-8'),
+                 "Speaker_ID": str(line[3]),
                  "minutes": ts}
 
             phone_catalog = json.dumps(phone_catalog)
@@ -306,9 +468,24 @@ def write_bw_catalog(transcript, phoneme_transcript, counter, ep_num, meta,
 
 def find_line_in_transcript(transcript, sentence):
     """
-    Uses the Levenshtein (i.e., edit) distance between a sentence and the
-    lines in transcript to identify the row most likely to correspond to
-    sentence in transcript
+    Uses the Levenshtein distance between a sentence and the lines in a
+    transcript to identify the line in transcript most likely to correspond to
+    the query sentence
+
+    Parameters
+    ----------
+    transcript : np.array of shape (n, 4)
+        A podcast transcript as produced via compile_episode_transcript. Each
+        row corresponds to a line in the transcript, and the columns
+        correspond to [start_time, end_time, utterance, speaker_id]
+
+    sentence : string
+        A sentence as compiled from the p2fa transcription of a podcast.
+
+    Returns
+    -------
+    idx : int
+        The index to the row in transcript most likely to contain sentence
     """
     edit_dist = []
     clean_sent = clean_sentence(sentence)
@@ -320,18 +497,36 @@ def find_line_in_transcript(transcript, sentence):
     return idx
 
 
-def compile_phoneme_transcript(ff, ep_num, ts_csv, transcript):
+def compile_phoneme_transcript(fp, transcript):
     """
     Reads the phoneme alignments produced by p2fa and matches them to their
     corresponding line in transcript. Returns phoneme_transcript, a list of
-    lists where each sublist contains
+    lists where each sublist is organized as
 
-        [phoneme transcription, transcript line, transcript row index]
+    [phoneme transcription, original transcript line, transcript line index]
+
+    Parameters
+    ----------
+    fp : string
+        The filepath to the p2fa-generated json alignment associated with
+        transcript
+
+    transcript : np.array of shape (n, 4)
+        A podcast transcript as produced via compile_episode_transcript. Each
+        row corresponds to a line in the transcript, and the columns
+        correspond to [start_time, end_time, utterance, speaker_id]
+
+    Returns
+    -------
+    phoneme_transcript : list of n lists
+        A phonemic version of transcript in which each sublist contains
+        [phoneme transcription, original transcript line, transcript line
+        index]
     """
     phoneme_transcript = []
-    file_name = os.path.split(ff)[-1].split('.')[0]
+    file_name = os.path.split(fp)[-1].split('.')[0]
 
-    with open(ff) as data_file:
+    with open(fp, 'rw') as data_file:
         line_dicts, line_num = [], []
         word_list = json.load(data_file)["words"]
 
@@ -341,7 +536,7 @@ def compile_phoneme_transcript(ff, ep_num, ts_csv, transcript):
             if 'line_idx' in w_dict.keys():
                 line_num.append(w_dict['line_idx'])
 
-            # if word token IS a pause
+            # if word token IS a pause...
             else:
                 start = w_dict['start'] / 60.
                 end = w_dict['end'] / 60.
@@ -371,8 +566,24 @@ def compile_phoneme_transcript(ff, ep_num, ts_csv, transcript):
 
 def compile_phoneme_sentence(line_dicts):
     """
-    Gathers the phonemes for each word in a transcript row and concatenates
+    Gathers the phonemes for each word in a transcript line and concatenates
     them into a single string to be added to phoneme_transcript
+
+    Parameters
+    ----------
+    line_dicts : list of dicts
+        Confusingly, line_dicts is actually a list of dictionaries. Each
+        dictionary corresponds to p2fa's json object for the phonemic
+        transcription of an individual word. The line_dicts list as a whole
+        contains the phoneme transcriptions for all the words in a single line
+        of a podcast transcript.
+
+    Returns
+    -------
+    sentence_phones : str
+        A string representing the concatenated phonemes for the words in
+        line_dicts. The token '{sp}' is used to separate the last phoneme of
+        the preceding word from the first phoneme of the succeeding word.
     """
     sentence_phones = []
 
@@ -397,6 +608,17 @@ def compile_phoneme_sentence(line_dicts):
 
 
 def write_field_descriptions(file_name):
+    """
+    Generates the field_descriptions.json file for the Bookworm n-gram
+    visualizer. Assumes that two separate bookworm folders are being generated:
+    a standard word n-gram folder, and another phoneme n-gram folder
+
+    Parameters
+    ----------
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
+    """
     field_descriptions = \
     [
         {"field":"Speaker_ID", "datatype":"categorical", "type":"text",
@@ -430,10 +652,20 @@ def compile_alignments_bookworm(as_ep_ids, file_name):
     the corresponding line in transcript, gets the appropriate episode
     metadata, and constructs the corresponding catalog.json and input.txt
     files for both a phoneme bookworm and a regular bookworm.
+
+    Parameters
+    ----------
+    as_ep_ids : list
+        The list of audiosearch episode ids associated with a particular
+        podcast
+
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
     """
     counter = 0
     # db = db_connect()
-    db = Postgres_Connect().connection()
+    db = Postgres_Connect().connection
     as_client = init_as_client()
     make_bw_directories(file_name)
     ts_csv = load_timesteps(file_name)
@@ -458,9 +690,9 @@ def compile_alignments_bookworm(as_ep_ids, file_name):
 
         phoneme_transcript = []
 
-        for ff in np.sort(glob.glob(phoneme_file)):
+        for fp in np.sort(glob.glob(phoneme_file)):
             phoneme_transcript = phoneme_transcript + \
-                compile_phoneme_transcript(ff, ep_num, ts_csv, transcript)
+                compile_phoneme_transcript(fp, transcript)
 
         print('Writing BW entry for {}'.format(phoneme_file))
 
@@ -479,12 +711,13 @@ def compile_alignments_bookworm(as_ep_ids, file_name):
     shutil.move('./' + file_name, './' + file_name + '_bookworm')
     shutil.move('./' + file_name + '_phonemes', './' + file_name + '_bookworm')
 
-# @click.command()
-# @click.option('--n_segs', default=2,
-#                 help='number of segments to split the transcript into ' \
-#                 'for forced alginment (more segments ~> faster alignment)')
-# @click.argument('show_name')
-# @click.argument('file_name')
+
+@click.command()
+@click.option('--n_segs', default=2,
+                help='number of segments to split the transcript into during' \
+                ' alignment with p2fa (more segments ~> faster alignment)')
+@click.argument('show_name')
+@click.argument('file_name')
 def align_show(show_name, n_segs, file_name):
     """
     Finds all the episode ids associated with show_name in the audiosearch db,
@@ -493,6 +726,19 @@ def align_show(show_name, n_segs, file_name):
     audiosearch db, segments the audio and transcripts into bite-sized
     segments, runs each segment through p2fa to get phoneme-level
     alignments, and writes both regular and phoneme-level bookworm files.
+
+    Parameters
+    ----------
+    show_name : str
+        The name of the particular podcast as it appears in the audiosearch API
+
+    n_segs : int
+        The number of chunks to split a transcript into during alignment
+        with p2fa (more chunks ~> faster alignment)
+
+    file_name : str
+        A nickname for the podcast. This is used when saving the audio files,
+        naming the bookworm folders, writing transcript jsons, etc.
     """
     make_alignments_directory()
     as_client = init_as_client()
@@ -509,8 +755,9 @@ def align_show(show_name, n_segs, file_name):
 
     plot_pause_words(show_name, file_name, pause_dict)
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
     # show_name = "Political Gabfest"
     # n_segs = 10
     # file_name = 'gabfest'
     # align_show(show_name, n_segs, file_name)
+    align_show()
