@@ -9,6 +9,10 @@ import re
 from audiosearch import Client
 
 def make_bw_directories(file_name):
+    """
+    Creates the relevant bookworm directories and subdirectories for both
+    regular word bws and phoneme bws
+    """
     if not os.path.lexists('./metadata'):
         os.mkdir('./metadata')
     if not os.path.lexists('./texts'):
@@ -61,27 +65,34 @@ def make_alignments_directory():
 
 
 def init_as_client():
-    vv = dotenv.get_variables('.env')
-    key = str(vv[u'AS_ID'])
-    secret = str(vv[u'AS_SECRET'])
+    """
+    Connects to the Audiosearch API
+    """
+    vv = dotenv.load_dotenv('.env')
+    key = os.environ.get('AS_ID')
+    secret = os.environ.get('AS_SECRET')
     return Client(key, secret)
 
-
-# def db_connect():
-#     """
-#     For connecting to a POSTGRES database on the local machine.
-#     """
-#     vv = dotenv.get_variables('.env')
-#     dbname = str(vv[u'dbname'])
-#     user = str(vv[u'db_user'])
-#     pwd = str(vv[u'db_pwd'])
-#     host = str(vv[u'db_host'])
-#     conn_string = "host='%s' dbname='%s' " \
-#                   "user='%s' password='%s'"%(host, dbname, user, pwd)
-#     return psycopg2.connect(conn_string)
+# deprecated: use Postgres_Connect in db_utils
+def db_connect():
+    """
+    For connecting to a POSTGRES database on the local machine.
+    """
+    vv = dotenv.get_variables('.env')
+    dbname = str(vv[u'dbname'])
+    user = str(vv[u'db_user'])
+    pwd = str(vv[u'db_pwd'])
+    host = str(vv[u'db_host'])
+    conn_string = "host='%s' dbname='%s' " \
+                  "user='%s' password='%s'"%(host, dbname, user, pwd)
+    return psycopg2.connect(conn_string)
 
 
 def get_transcript(db, trans_id):
+    """
+    Queries the audiosearch database and returns the transcript associated
+    with a particular transcript_id
+    """
     query = """SELECT "timed_texts".*
                FROM "timed_texts"
                WHERE "timed_texts"."transcript_id" IN (%s)
@@ -118,6 +129,9 @@ def rename_file(audio_url, ep_id):
 
 
 def clean_sentence(sentence):
+    """
+    This is SO gross ;_;
+    """
     event_regex = r'\[.*\]'
     cleaned_sentence = re.sub(r'{.*?}', '', sentence)\
       .replace(' :', ':')\
