@@ -1,4 +1,6 @@
 import subprocess
+import dotenv
+import os
 
 class SQL_Connect(object):
     """
@@ -34,7 +36,6 @@ class SQL_Connect(object):
         """
         Find .env file in the directory holding this script
         """
-        import dotenv, os
         path = os.path.realpath(__file__)
         env  = os.path.join(os.path.dirname(path), '.env')
         dotenv.load_dotenv(env)
@@ -119,7 +120,6 @@ class Postgres_Connect(object):
         """
         Find .env file in the directory holding this script
         """
-        import dotenv, os
         path = os.path.realpath(__file__)
         env  = os.path.join(os.path.dirname(path), '.env')
         dotenv.load_dotenv(env)

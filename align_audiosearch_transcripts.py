@@ -711,13 +711,6 @@ def compile_alignments_bookworm(as_ep_ids, file_name):
     shutil.move('./' + file_name, './' + file_name + '_bookworm')
     shutil.move('./' + file_name + '_phonemes', './' + file_name + '_bookworm')
 
-
-@click.command()
-@click.option('--n_segs', default=2,
-                help='number of segments to split the transcript into during' \
-                ' alignment with p2fa (more segments ~> faster alignment)')
-@click.argument('show_name')
-@click.argument('file_name')
 def align_show(show_name, n_segs, file_name):
     """
     Finds all the episode ids associated with show_name in the audiosearch db,
@@ -756,8 +749,9 @@ def align_show(show_name, n_segs, file_name):
     plot_pause_words(show_name, file_name, pause_dict)
 
 if __name__ == '__main__':
-    # show_name = "Political Gabfest"
-    # n_segs = 10
-    # file_name = 'gabfest'
-    # align_show(show_name, n_segs, file_name)
+    # just an example
+    show_name = "Political Gabfest"
+    n_segs = 10
+    file_name = 'gabfest'
+    align_show(show_name, n_segs, file_name)
     align_show()

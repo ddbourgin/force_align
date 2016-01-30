@@ -3,6 +3,7 @@ requests
 simplejson
 jsonschema
 click
+soundscrape
 pandas
 tgt
 numpy
