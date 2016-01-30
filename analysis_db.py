@@ -4,6 +4,17 @@ import seaborn as sns
 import pandas as pd
 import sqlite3
 
+"""
+This file contains functions for working with a local sqlite database
+containing the This American Life transcript pronunciation and pause
+information. In general it is an attempt to replicate the basic plots from
+analysis.py .
+
+Warning: It's not pretty, and probably needs to be rewritten from the ground
+up. For now, it gets the job done.
+"""
+
+
 def sort_by_pause_length(file_name):
     pause_before, pause_after = [], []
     conn = sqlite3.connect('./alignment_data/{}.db'.format(file_name))
@@ -81,12 +92,7 @@ def plot_pauses_pronunc(show_name, file_name, word):
 
 
 def plot_prnc_counts(show_name, file_name, word):
-    """
-    Unfortunately, I think this isn't right. This function plots the
-    counts for each pronunciation, but only if they are associated with
-    pre & succeeding pauses.
-    """
-    sns.set(style="white")
+    sns.set(style="white", font_scale=0.5)
     word = word.lower().strip()
 
     conn = sqlite3.connect('./alignment_data/{}.db'.format(file_name))
@@ -95,15 +101,16 @@ def plot_prnc_counts(show_name, file_name, word):
     cur.execute("SELECT prnc, count FROM pronunciations WHERE word_index IN (SELECT word_index FROM words WHERE word=?)", (word,))
     val = cur.fetchall()
     counts = [v[1] for v in val]
-    prncs = [v[0] for v in val]
+    prncs = [v[0] + '\n(Count: {})'.format(v[1]) for v in val]
+    freqs = np.array(counts).astype(float) / np.sum(counts)
 
-    title = 'Counts for Pronunciations of \n`{}` in {}'.format(word, show_name)
+    title = 'Pronunciations for \n`{}` in {}'.format(word, show_name)
 
     fig, ax = plt.subplots()
-    ax = sns.barplot(prncs, counts, palette="Set3", ax=ax)
+    ax = sns.barplot(prncs, freqs, palette="Set3", ax=ax)
     ax.set_title(title)
-    ax.set_ylabel("Count")
-    save_path = './alignment_data/{}_{}_prnc_count.png'.format(word, file_name)
+    ax.set_ylabel("Frequency")
+    save_path = './alignment_data/pronunciations/{}_pronunc_{}.png'.format(word, 'TAL')
     plt.savefig(save_path)
     plt.close()
 
@@ -119,6 +126,9 @@ def speaker_pronuncs(show_name, file_name, speaker, word):
     # get pronunciation indices (which we use to compute counts) for speaker
     cur.execute("SELECT prnc_index FROM locations WHERE speaker=? AND word_index IN (SELECT word_index FROM words WHERE word=?)", (speaker, word))
     val = np.array(cur.fetchall()).ravel()
+    if len(val) == 0:
+        print('No pronunciations found for {} for speaker {}'.format(word, speaker))
+        return None
     prnc_indexes = np.nonzero(np.bincount(val))[0]
     sort_idxs = np.sort(prnc_indexes)
     counts_speak = np.bincount(val)[sort_idxs].astype(float)
@@ -142,26 +152,47 @@ def speaker_pronuncs(show_name, file_name, speaker, word):
     counts, prncs, speaks = [], [], []
     for idx, ix in enumerate(prnc_index):
         speaks += ['{}'.format(speaker.title()), 'Overall']
-        prncs += [prncs_all[idx], prncs_all[idx]]
         if ix in sort_idxs:
             bb = np.argwhere(sort_idxs == ix).ravel()
             counts += [propors_speak[bb][0], propors_all[idx]]
+            labl = '\n({}: {}, Overall: {})'.format(speaker.title(),
+                                                    int(counts_speak[bb]),
+                                                    int(counts_all[idx]))
+            prncs += [prncs_all[idx] + labl, prncs_all[idx] + labl]
         else:
             counts += [0, propors_all[idx]]
+            labl = '\n({}: {}, Overall: {})'.format(speaker.title(), 0,
+                                                    int(counts_all[idx]))
+            prncs += [prncs_all[idx] + labl, prncs_all[idx] + labl]
 
-    title = 'Usage Frequencies for Pronunciations of \n`{}` in {}'\
-                                                    .format(word, show_name)
-    cc = pd.DataFrame(np.array([prncs, counts, speaks]).T, columns=['prnc', 'count', 'Speaker'])
-    cc['count'] = cc['count'].astype(float)
+    title = 'Usage Frequencies for Pronunciations '\
+            'of \n`{}` in {}'.format(word, show_name)
 
+    cc = pd.DataFrame(np.array([prncs, counts, speaks]).T,
+                      columns=['prnc', 'proportion', 'Speaker'])
+    cc['proportion'] = cc['proportion'].astype(float)
+
+    sns.set(font_scale=0.5)
     fig, ax = plt.subplots()
-    ax = sns.barplot(x='prnc', y='count', hue='Speaker', data=cc,
+    ax = sns.barplot(x='prnc', y='proportion', hue='Speaker', data=cc,
                      palette="Set3", ax=ax)
     ax.set_title(title)
     ax.set_ylabel("Usage Proportion")
-    save_path = './alignment_data/{}_{}_{}_prnc_count.png'.format(word, file_name, speaker.title())
+    save_path = './alignment_data/new_pronuncs/{}_{}_{}_prnc_count.png'\
+                                        .format(word, file_name, speaker.title())
     plt.savefig(save_path)
     plt.close()
+
+
+def chi_square(cc):
+    import scipy
+    table_sp = cc[cc.Speaker != 'Overall'].proportion.tolist()
+    table_ov = cc[cc.Speaker == 'Overall'].proportion.tolist()
+    table = np.array([table_sp, table_ov]).T
+    chi2, p, ddof, expected = scipy.stats.chi2_contingency( table )
+    if p <= 0.5:
+        return True
+    return False
 
 
 def sort_by_pronunc_diversity(file_name, n=10):

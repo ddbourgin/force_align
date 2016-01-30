@@ -10,6 +10,17 @@ import json
 import re
 from pydub import AudioSegment
 
+"""
+This file contains functions for constructing and working with local
+dictionary files containing pronunciation and pause information for podcast
+transcripts taken from the Audiosearch database.
+
+Warning: A lot of this is pretty wrongheaded. It's not pretty, and probably
+needs to be rewritten from the ground up. For instance, I probably shouldn't be
+using dictionaries to store pause and pronunciation information in the first
+place -- data of this size is much better suited for an actual database.
+"""
+
 def compare_pronunciations(word, show_name, file_name):
     """
     Generates a plot showing the frequency of each pronunciation of a given
@@ -34,7 +45,7 @@ def compare_pronunciations(word, show_name, file_name):
 
 
 def plot_pronunciations(prnc_dict, word, show_name, file_name):
-    sns.set(style="white")
+    sns.set(style="white", font_scale=0.5)
     fig, ax = plt.subplots()
 
     counts, labels = [], []
@@ -45,6 +56,7 @@ def plot_pronunciations(prnc_dict, word, show_name, file_name):
         counts.append(prnc_dict[word][prnc]["count"])
         labels.append(prnc + '\n(Count: {})'.format(counts[-1]))
 
+    labels = np.array(labels)
     idxs = np.argsort(labels) # for consistency across plots
     freqs = np.asarray(counts, dtype=float) / np.sum(counts)
     ax = sns.barplot(labels[idxs], freqs[idxs], palette="Set3", ax=ax)
@@ -62,6 +74,11 @@ def compile_prnc_dict(as_ep_ids, file_name):
     """
     Construct a pronunciation dictionary for all words in the corpus and
     pickle it to ./alignment_data/pronunciations for future queries.
+
+    WARNING: This is a really inefficient use of space; I should really be
+    constructing a table in a database. Thankfully, since Audiosearch
+    only has a limited number of episode transcripts per show, this works for
+    the time being...
     """
     prnc_dict = {}
     pdict_fp = './alignment_data/pronunciations/' \
@@ -142,49 +159,16 @@ def find_num_pronunciations(prnc_dict):
     return n_prncs[idxs]
 
 
-def pause_dict_word(file_name, word, prnc_dict=None):
-    """
-    For testing. We can delete this once we're sure compile_pause_dict is
-    working correctly
-    """
-    if not prnc_dict:
-        pdict_fp = './alignment_data/pronunciations/' \
-                   '{}_prnc_dict.pickle'.format(file_name)
-
-        if os.path.lexists(pdict_fp):
-            with open(pdict_fp, 'rb') as handle:
-                prnc_dict = pickle.load(handle)
-        else:
-            raise OSError('Path {} does not exist!'.format(pdict_fp))
-
-    pause_dict = {}
-    prev_file = None
-    path = './{}_bookworm/{}_phonemes/' \
-           'texts/input.txt'.format(file_name, file_name)
-
-    with open(path, 'r') as ff:
-        for prnc in prnc_dict[word].keys():
-            regex_after = r'(\{(sp|\d{1}\.\d{2})\} ' + \
-                                prnc + r' \{(\d{1}\.\d{2})\})'
-            regex_before = r'(\{(\d{1}\.\d{2})\} ' + \
-                                prnc + r' \{(sp|\d{1}\.\d{2})\})'
-
-            for line in ff.readlines():
-                res_after  = re.findall(regex_after, line, re.IGNORECASE)
-                res_before = re.findall(regex_before, line, re.IGNORECASE)
-
-                if res_after or res_before:
-                    print(line)
-                    print(res_after)
-                    print(res_before)
-                    print('\n')
-
-
 def compile_pause_dict(file_name, prnc_dict=None):
     """
     Creates a dictionary containing the average pause lengths both before and
     after a particular pronunciation. Requires bookworm files in the current
     directory.
+
+    WARNING: This is a really inefficient use of space; I should really be
+    constructing a table in a database. Thankfully, since Audiosearch
+    only has a limited number of episode transcripts per show, this works for
+    the time being...
     """
     if not prnc_dict:
         pdict_fp = './alignment_data/pronunciations/' \
@@ -279,6 +263,9 @@ def compile_pause_dict(file_name, prnc_dict=None):
 
 
 def sort_by_pause_length(file_name, pause_dict=None):
+    """
+    Sorts a pronunciation dictionary
+    """
     if not pause_dict:
         pdict_fp = './alignment_data/{}_pause_dict.pickle'.format(file_name)
 
@@ -313,7 +300,7 @@ def sort_by_pause_length(file_name, pause_dict=None):
 def plot_pause_words(show_name, file_name, pause_dict=None):
     """
     Show words with the largest Avg. Pause Length After * Word Count
-    products
+    values
     """
     sns.set(style="white")
 
@@ -370,6 +357,10 @@ def plot_pause_words(show_name, file_name, pause_dict=None):
 
 
 def compile_supercut(prnc_dict, word, file_name, show_name):
+    """
+    Creates a supercut of all the instances of a particular pronunciation of a
+    given word in a podcast series.
+    """
     pad_length = 500. # in milliseconds
     prev_file = None
     word_dict = prnc_dict[word]
