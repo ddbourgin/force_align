@@ -7,6 +7,7 @@ import cgi
 import os
 import glob
 import csv
+import pickle
 from pydub import AudioSegment # for slicing mp3s
 from align import *
 
@@ -404,15 +405,19 @@ class TAL_scraper(object):
             ts = line[0].split(':')
             ts = (int(ts[0]) * 60.) + int(ts[1]) + (float(ts[2])/60.)
             ts = int(ts) # recast minutes to int for bookworm parsing
-
+	    
+	    # FULL TEXT STRING
             txt = cgi.escape(unicode(str(line[2].encode('ascii', 'ignore')), 'utf-8'), quote=True)
             link = ' [<a href="' + self.meta['transcript'] + '">ep. ' + str(self.ep_number) + '</a>]'
-            sstring = txt + unicode(link, 'utf-8')
+	    toggle = ''
+	    if idx in self.transcript_phonemes.keys():
+ 	        toggle = ' <a class="wp_toggle" data-alt="' + cgi.escape(self.transcript_phonemes[idx].encode('ascii', 'ignore'), quote=True) + cgi.escape(unicode(link, 'utf-8'), quote=True) + '" style="color:blue;text-decoration:underline;cursor:pointer" href="#">Toggle</a>'
+            sstring = txt + unicode(link, 'utf-8') + toggle
 
     	    if line[1] == 'EVENT':
                 line[1] = ''
     	    if line[4] =='Event':
-        		line[4] = ''
+        	line[4] = ''
 
     	    catalog = {"searchstring": sstring,
                        "filename": unicode(str(counter), 'utf-8'),
@@ -439,14 +444,10 @@ class TAL_scraper(object):
                 f.write(str(catalog)+'\n')
                 f.close()
 
-            modal_phone = \
-            '<div class="modal fade" id="#sentmodal' + str(counter) + '" role="dialog"> <div class="modal-dialog modal-sm"> <div class="modal-content"> <div class="modal-header"> <button type="button" class="close" data-dismiss="modal">&times;</button><h4> </h4></div> <div class="modal-body"> <p>' + txt + '</p> </div> </div> </div>'
-
-            link_phone = ' [<a href="' + self.meta['transcript'] + '">ep. ' + str(self.ep_number) + '</a>, <a href="#" data-toggle="modal" data-target="#sentmodal' + str(counter) + '">sentence</a>]' + modal_phone
-
+	    # PHONEME STRING
+	    toggle = ' <a class="wp_toggle" data-alt="' + txt + cgi.escape(unicode(link, 'utf-8'), quote=True) + '" style="color:blue;text-decoration:underline;cursor:pointer" href="#">Toggle</a>'
             if idx in self.transcript_phonemes.keys():
-                # for phone_catalog, it might be worth including a link to the sstring sentence that the phonemes here correspond to
-                phone_catalog = {"searchstring": self.transcript_phonemes[idx] + link_phone,
+                phone_catalog = {"searchstring": self.transcript_phonemes[idx] + link + toggle,
                                  # "searchstring": self.transcript_phonemes[idx],
                                  "filename": unicode(str(counter), 'utf-8'),
                                  "year": unicode(ad, 'utf-8'),
@@ -685,4 +686,9 @@ class TAL_scraper(object):
             f.write(audio.content)
             f.close()
 
-
+    def save(self, fp):
+	self.soup = str(self.soup)
+	self.transcript = [map(str, i) for i in self.transcript.tolist()]
+	self.names = dict([map(str, i) for i in self.names.items()])
+	with open(fp, 'wb') as handle:
+	    pickle.dump(self, handle)

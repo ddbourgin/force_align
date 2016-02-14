@@ -8,6 +8,7 @@ import glob
 import re
 import pandas as pd
 from bs4 import BeautifulSoup
+import pickle
 # import dotenv
 # from genderize import Genderize
 from TAL_scraper import TAL_scraper, load_TAL_tags
@@ -78,7 +79,7 @@ def scrape_transcripts(episode_ids, trans_url, stagger, scraper, bookworm, align
   tag_eps, tag_links, ep_tags = load_TAL_tags()
   session, genderize = init_sessions()
   cached_names, scrapers = {}, []
-  counter = 0
+  counter = 0 
 
   for idd in episode_ids:
     print('Downloading episode ' + str(idd))
@@ -145,21 +146,34 @@ def transcript_json_dump(scrapers):
         json.dump(transfile, file_id)
 
 
-def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm, align):
+def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm, align, counter):
   if type(episode_ids) != list:
     episode_ids = [episode_ids]
 
   word_phonemes = {}
-  counter = 0
 
   for ee in episode_ids:
     transcript = []
     json_dir = './alignment_data/alignments_json/TAL'+str(ee)+'_*.json'
     json_dir = glob.glob(json_dir)
+    fp = './alignment_data/saved_scrapers/TAL{}_scraper.pickle'.format(ee)
 
     if len(json_dir) == 0:
-	print('Unable to find algnments for episode {}. Skipping'.format(ee))
+	print('Unable to find alignments for episode {}. Skipping'.format(ee))
 	continue
+
+    try:
+        if os.path.lexists(fp):
+    	    print('Using saved version of scraper for episode {}'.format(ee))
+	    with open(fp, 'rb') as handle:
+	        ss = pickle.load(handle)	    
+	    ss.soup = BeautifulSoup(ss.soup)
+	    ss.transcript = np.array(ss.transcript)
+            counter = ss.write_catalog_and_input_align(counter)
+            print('Counter value: {}'.format(counter))
+	    continue
+    except:
+	pass
 
     ss, untranscribed_episodes = \
 	scrape_transcripts(ee, trans_url, stagger, scraper, False, False)
@@ -210,6 +224,7 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
             # sentence and replaces it (hence why we return a
             # new version of ss)
             ss, idx = find_line_in_transcript(ss, mod, line_num, sentence, trans_idx)
+	    
 
             if idx == None:
               print('Unable to Match Line. Skipping.'.upper())
@@ -243,21 +258,25 @@ def read_aligned_transcripts(episode_ids, trans_url, stagger, scraper, bookworm,
             line_dicts, line_num = [w_dict], [next_line]
 
         line_offset.append( len(set([ll['line_idx'] for ll in word_list if 'line_idx' in ll.keys()])) )
-
+  
     counter = ss.write_catalog_and_input_align(counter)
-    print(counter)
-  return word_phonemes
+    print('Counter value: {}'.format(counter))
+
+    # save scraper for future bookworms
+    ss.save(fp)
+  return word_phonemes, ss
 
 if __name__ == '__main__':
   FILE_ID = 'TAL_Pauses'
-  EPISODE_IDS = range(263, 500)
+  EPISODE_IDS = range(2, 3)
   STAGGER = 3.1 # stagger requests to reduce server load
   TRANSCRIPT_URL = 'http://www.thisamericanlife.org/radio-archives/episode/####/transcript'
   SCRAPER = TAL_scraper(FILE_ID)
   BOOKWORM = False # True for regular (non-aligned) Bookworm formatting
-  ALIGN = True     # True for performing speech alignment with p2fa-vislab
-  ALIGNMENT_BW = False # True for reading the aligned json into bw format
+  ALIGN = False     # True for performing speech alignment with p2fa-vislab
+  ALIGNMENT_BW = True # True for reading the aligned json into bw format
 
+  COUNTER = 0
   # if ALIGNMENT_BW:
   #   # problem episodes
   #   # TODO: read this from problem_episodes.txt instead of hard coding
@@ -274,7 +293,7 @@ if __name__ == '__main__':
   if BOOKWORM or ALIGN:
     scrapers, untranscribed_episodes = scrape_transcripts(EPISODE_IDS, TRANSCRIPT_URL, STAGGER, SCRAPER, BOOKWORM, ALIGN)
   elif ALIGNMENT_BW:
-    word_phonemes = read_aligned_transcripts(EPISODE_IDS, TRANSCRIPT_URL, STAGGER, SCRAPER, False, False)
+    word_phonemes,ss = read_aligned_transcripts(EPISODE_IDS, TRANSCRIPT_URL, STAGGER, SCRAPER, False, False, COUNTER)
     SCRAPER.write_field_descriptions(phonemes=True)
 
   if BOOKWORM:

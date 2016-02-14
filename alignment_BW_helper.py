@@ -1,5 +1,6 @@
 import numpy as np
 import re
+import Levenshtein
 
 def grow_phoneme_dict(word_phonemes, w_dict, offset, file_id, line):
   phonemes = []
@@ -108,7 +109,8 @@ def guess_match(ss, ii, sentence, line_num, trans_idx):
 
 
 def hail_mary_guess(trans_idx, ss, mod, sentence, line_num, ii):
-  trans_idx = trans_idx + 1
+  if trans_idx < ss.transcript.shape[0]-1:
+    trans_idx = trans_idx + 1
 
   while ss.transcript[trans_idx, 1] == 'EVENT':
     trans_idx += 1
@@ -145,15 +147,63 @@ def hail_mary_guess(trans_idx, ss, mod, sentence, line_num, ii):
 
   else:
     if sentence == u'Wow. {0.33}':
+      ss.transcript[151, 2] = sentence.strip()
+      ss.event_line_dict[151] = ['Speech']
+      ss = check_for_pauses(ss, sentence, 151, pause_dur=1.0)
       return True, ss, 151
 
-    if sentence == u"Wow. We're driving fast out of here. OK, we're out of here.":
+    if cleaned_sentence == u"Wow. We're driving fast out of here. OK, we're out of here.":
+      ss.transcript[140, 2] = sentence.strip()
+      ss.event_line_dict[140] = ['Speech']
+      ss = check_for_pauses(ss, sentence, 140, pause_dur=1.0)
       return True, ss, 140
 
     if sentence == u"Come on! {2.01}":
+      ss.transcript[81, 2] = sentence.strip()
+      ss.event_line_dict[81] = ['Speech']
+      ss = check_for_pauses(ss, sentence, 81, pause_dur=1.0)
       return True, ss, 81 # ? not positive about this one.. (Episode 258)
+
+    if sentence == u'[MUSIC "LIVE AND LET DIE" {0.08} BY GUNS \'N\' ROSES.':
+      ss.transcript[316, 2] = sentence.strip()
+      ss.event_line_dict[316] = ['Music']
+      ss = check_for_pauses(ss, sentence, 316, pause_dur=1.0)
+      return True, ss, 316
     # still no match :-(
     return False, ss, None
+
+
+def levenshtein_find(ss, sentence, cleaned_sentence):
+    """
+    Uses the Levenshtein distance between a sentence and the lines in a
+    transcript to identify the line in transcript most likely to correspond to
+    the query sentence
+
+    Parameters
+    ----------
+    transcript : np.array of shape (n, 4)
+       A podcast transcript as produced via compile_episode_transcript. Each
+       row corresponds to a line in the transcript, and the columns
+       correspond to [start_time, end_time, utterance, speaker_id]
+
+    sentence : string
+       A sentence as compiled from the p2fa transcription of a podcast.
+
+    Returns
+    -------
+    idx : int
+      The index to the row in transcript most likely to contain sentence
+    """
+    edit_dist = []
+    for idx, line in enumerate(ss.transcript):
+        trans_line = line[2]
+        edit_dist.append(Levenshtein.distance(cleaned_sentence, trans_line))
+    trans_idx = np.argmin(edit_dist)
+    trans_line = ss.transcript[trans_idx, 2]
+    ss.transcript[trans_idx, 2] = sentence.strip()
+    ss.event_line_dict[trans_idx] = ['Speech']
+    ss = check_for_pauses(ss, sentence, trans_idx, pause_dur=1.0)
+    return ss, idx
 
 
 def find_line_in_transcript(ss, mod, line_num, sentence, trans_idx):
@@ -177,15 +227,19 @@ def find_line_in_transcript(ss, mod, line_num, sentence, trans_idx):
     print('SKIPPING LINE: ' + sentence)
     return ss, None
 
-  # final pass
+  # penultimate pass
   matched, ss, idx = hail_mary_guess(trans_idx, ss, mod, sentence, line_num, ii)
   if matched == True:
     return ss, idx
 
-  # if, somehow, we still can't find a match
-  import ipdb; ipdb.set_trace()
-  return ss, None
-
+  # final pass
+  try:
+    return levenshtein_find(ss, sentence, cleaned_sentence)
+  except:
+    # if, somehow, we still can't find a match
+    print('UNABLE TO FIND THE FOLLOWING:')
+    print('sentence: {}\ncleaned_sentence: {}\nline_num: {}\nii: {}'.format(sentence, cleaned_sentence, line_num, ii))
+    import ipdb; ipdb.set_trace()
 
 def check_for_pauses(ss, sentence, trans_idx, pause_dur=1.0):
   if re.search(r'{.*?}', sentence):
